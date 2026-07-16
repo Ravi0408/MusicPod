@@ -1,10 +1,13 @@
 import { app, BrowserWindow } from 'electron'
+import { ChildProcess } from 'child_process'
 import { getDb } from '../database/db'
 import { downloads } from '../database/schema'
 import { eq } from 'drizzle-orm'
 import path from 'path'
 import fs from 'fs-extra'
 import crypto from 'crypto'
+import { YouTubeProvider, YoutubeSearchResult } from './youtubeProvider'
+import { LibraryService } from './libraryService'
 
 export interface DownloadItem {
   id: string
@@ -17,15 +20,18 @@ export interface DownloadItem {
   startedAt?: string
   finishedAt?: string
   outputPath?: string
+  error?: string
 }
 
 export interface SearchResult {
-  trackId: string
+  trackId: string    // YouTube video ID
   title: string
   artist: string
   album: string
   duration: number
   provider: string
+  url: string        // YouTube watch URL
+  thumbnailUrl: string
 }
 
 export class DownloadService {
@@ -34,22 +40,32 @@ export class DownloadService {
   private static maxConcurrent = 2
   private static mainWindow: BrowserWindow | null = null
 
+  // Map of downloadId → active ChildProcess (for cancel support)
+  private static activeProcesses = new Map<string, ChildProcess>()
+
   static init(mainWindow: BrowserWindow) {
     this.mainWindow = mainWindow
   }
 
-  static async searchMock(query: string): Promise<SearchResult[]> {
-    if (!query) return []
-    return [
-      { trackId: 'mock-1', title: `Summer Breeze (${query})`, artist: 'Ocean Blue', album: 'Chillwaves', duration: 180, provider: 'MockProvider' },
-      { trackId: 'mock-2', title: `Neon Horizon (${query})`, artist: 'Synthrunner', album: 'RetroGrid', duration: 240, provider: 'MockProvider' },
-      { trackId: 'mock-3', title: `Rainy Coffee Shop (${query})`, artist: 'Lofi Dreamer', album: 'Warm Mug', duration: 150, provider: 'MockProvider' }
-    ]
+  static async search(query: string): Promise<SearchResult[]> {
+    if (!query.trim()) return []
+
+    const results = await YouTubeProvider.search(query)
+    return results.map((r: YoutubeSearchResult) => ({
+      trackId: r.videoId,
+      title: r.title,
+      artist: r.uploader,
+      album: '',
+      duration: r.duration,
+      provider: 'YouTube',
+      url: r.watchUrl,
+      thumbnailUrl: r.thumbnailUrl
+    }))
   }
 
   static async addToQueue(track: SearchResult) {
     const downloadId = crypto.randomUUID()
-    
+
     const item: DownloadItem = {
       id: downloadId,
       title: track.title,
@@ -73,7 +89,7 @@ export class DownloadService {
     }).run()
 
     this.notifyQueueUpdate()
-    this.processQueue()
+    this.processQueue(track)
     return downloadId
   }
 
@@ -82,12 +98,19 @@ export class DownloadService {
   }
 
   static pauseDownload(id: string) {
+    // yt-dlp doesn't support true pause — we cancel and mark paused
     const item = this.queue.find((i) => i.id === id)
     if (item && item.status === 'downloading') {
+      const proc = this.activeProcesses.get(id)
+      if (proc) {
+        proc.kill('SIGTERM')
+        this.activeProcesses.delete(id)
+      }
       item.status = 'paused'
-      this.activeCount--
+      item.speed = '--'
+      item.eta = '--:--'
+      this.activeCount = Math.max(0, this.activeCount - 1)
       this.notifyQueueUpdate()
-      this.processQueue()
     }
   }
 
@@ -95,26 +118,36 @@ export class DownloadService {
     const item = this.queue.find((i) => i.id === id)
     if (item && item.status === 'paused') {
       item.status = 'pending'
+      item.progress = 0
       this.notifyQueueUpdate()
+      // Find the original track url from the DB title — re-search isn't ideal,
+      // so we store the url in the title field during queue for now.
+      // The next processQueue() call picks it up.
       this.processQueue()
     }
   }
 
   static cancelDownload(id: string) {
     const index = this.queue.findIndex((i) => i.id === id)
-    if (index !== -1) {
-      const item = this.queue[index]
-      if (item.status === 'downloading') {
-        this.activeCount--
+    if (index === -1) return
+
+    const item = this.queue[index]
+    if (item.status === 'downloading') {
+      const proc = this.activeProcesses.get(id)
+      if (proc) {
+        proc.kill('SIGTERM')
+        this.activeProcesses.delete(id)
       }
-      this.queue.splice(index, 1)
-
-      const db = getDb()
-      db.delete(downloads).where(eq(downloads.id, id)).run()
-
-      this.notifyQueueUpdate()
-      this.processQueue()
+      this.activeCount = Math.max(0, this.activeCount - 1)
     }
+
+    this.queue.splice(index, 1)
+
+    const db = getDb()
+    db.delete(downloads).where(eq(downloads.id, id)).run()
+
+    this.notifyQueueUpdate()
+    this.processQueue()
   }
 
   private static notifyQueueUpdate() {
@@ -123,65 +156,100 @@ export class DownloadService {
     }
   }
 
-  private static async processQueue() {
+  private static processQueue(track?: SearchResult) {
     if (this.activeCount >= this.maxConcurrent) return
 
-    const nextItem = this.queue.find((i) => i.status === 'pending')
-    if (!nextItem) return
+    // If a specific track is provided (newly queued), use it directly
+    if (track) {
+      const item = this.queue.find((i) => i.status === 'pending' && i.title === track.title)
+      if (item) {
+        this.startDownload(item, track.url)
+        return
+      }
+    }
 
-    nextItem.status = 'downloading'
+    // Otherwise pick the next pending item — but we need its url.
+    // For resumed items we re-attempt via a stored url on the item.
+    const nextItem = this.queue.find((i) => i.status === 'pending')
+    if (nextItem && (nextItem as any)._url) {
+      this.startDownload(nextItem, (nextItem as any)._url)
+    }
+  }
+
+  private static startDownload(item: DownloadItem, watchUrl: string) {
+    item.status = 'downloading'
+    // Store url on item for resume support (internal, not sent to renderer)
+    ;(item as any)._url = watchUrl
     this.activeCount++
     this.notifyQueueUpdate()
 
-    this.runDownloadSim(nextItem).catch((err) => {
-      console.error('Download simulation failed:', err)
+    this.runYtDlpDownload(item, watchUrl).catch((err) => {
+      console.error('Download failed:', err)
+      item.status = 'failed'
+      item.error = err.message
+      this.activeCount = Math.max(0, this.activeCount - 1)
+      this.activeProcesses.delete(item.id)
+      this.notifyQueueUpdate()
+
+      const db = getDb()
+      db.update(downloads)
+        .set({ status: 'failed' })
+        .where(eq(downloads.id, item.id))
+        .run()
+
+      this.processQueue()
     })
   }
 
-  private static async runDownloadSim(item: DownloadItem) {
+  private static async runYtDlpDownload(item: DownloadItem, watchUrl: string) {
     const downloadsDir = path.join(app.getPath('userData'), 'downloads')
     await fs.ensureDir(downloadsDir)
-    const destFilePath = path.join(downloadsDir, `${item.title.replace(/[^\w\s-]/g, '')}.mp3`)
 
-    let progress = 0
-    const interval = setInterval(async () => {
-      if (item.status !== 'downloading') {
-        clearInterval(interval)
-        return
-      }
-
-      progress += 10
-      item.progress = progress
-      item.speed = `${(1.0 + Math.random() * 0.5).toFixed(1)} MB/s`
-      const remainingSecs = Math.max(0, Math.round(((100 - progress) / 10) * 0.5))
-      item.eta = `0:${remainingSecs < 10 ? '0' : ''}${remainingSecs}`
-
-      this.notifyQueueUpdate()
-
-      if (progress >= 100) {
-        clearInterval(interval)
-        
-        await fs.writeFile(destFilePath, 'MOCK AUDIO DATA')
-
-        item.status = 'completed'
-        item.progress = 100
-        item.outputPath = destFilePath
-        item.finishedAt = new Date().toISOString()
-        this.activeCount--
-
-        const db = getDb()
-        db.update(downloads)
-          .set({
-            status: 'completed',
-            finishedAt: item.finishedAt,
-            outputPath: destFilePath
-          })
-          .where(eq(downloads.id, item.id))
-          .run()
-
+    const { promise, process: proc } = YouTubeProvider.download(
+      watchUrl,
+      downloadsDir,
+      item.title,
+      (progress) => {
+        item.progress = progress.percent
+        item.speed = progress.speed
+        item.eta = progress.eta
         this.notifyQueueUpdate()
-        this.processQueue()
       }
-    }, 500)
+    )
+
+    this.activeProcesses.set(item.id, proc)
+
+    const outputPath = await promise
+
+    this.activeProcesses.delete(item.id)
+    item.status = 'completed'
+    item.progress = 100
+    item.outputPath = outputPath
+    item.finishedAt = new Date().toISOString()
+    this.activeCount = Math.max(0, this.activeCount - 1)
+
+    const db = getDb()
+    db.update(downloads)
+      .set({
+        status: 'completed',
+        finishedAt: item.finishedAt,
+        outputPath
+      })
+      .where(eq(downloads.id, item.id))
+      .run()
+
+    this.notifyQueueUpdate()
+
+    // Auto-import the downloaded MP3 into the music library
+    if (this.mainWindow && await fs.pathExists(outputPath)) {
+      try {
+        await LibraryService.importSingleFile(outputPath, this.mainWindow)
+        this.mainWindow.webContents.send('library-updated')
+      } catch (err) {
+        console.error('Failed to auto-import downloaded file:', err)
+      }
+    }
+
+    this.processQueue()
   }
 }

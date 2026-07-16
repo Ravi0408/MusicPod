@@ -68,7 +68,9 @@ const addDownloadSchema = z.object({
   artist: z.string(),
   album: z.string(),
   duration: z.number(),
-  provider: z.string()
+  provider: z.string(),
+  url: z.string().url(),
+  thumbnailUrl: z.string().optional()
 })
 const downloadIdSchema = z.string().min(1)
 
@@ -262,7 +264,7 @@ export function registerIpcHandlers(mainWindow: BrowserWindow) {
   // Download Manager
   ipcMain.handle('search-downloads', async (_event, query: unknown) => {
     const parsedQuery = searchDownloadsSchema.parse(query)
-    return DownloadService.searchMock(parsedQuery)
+    return DownloadService.search(parsedQuery)
   })
 
   ipcMain.handle('add-to-download-queue', async (_event, payload: unknown) => {

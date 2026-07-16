@@ -26,7 +26,9 @@ import {
   Pause,
   PlayArrow,
   Cancel,
-  CheckCircle
+  CheckCircle,
+  YouTube,
+  OpenInNew
 } from '@mui/icons-material'
 
 interface SearchResult {
@@ -36,6 +38,8 @@ interface SearchResult {
   album: string
   duration: number
   provider: string
+  url: string
+  thumbnailUrl?: string
 }
 
 interface DownloadItem {
@@ -154,21 +158,73 @@ export default function Downloads() {
                       justifyContent: 'space-between'
                     }}
                     secondaryAction={
-                      <Button
-                        variant="outlined"
-                        size="small"
-                        startIcon={<CloudDownload />}
-                        onClick={() => handleAddToQueue(track)}
-                      >
-                        Queue
-                      </Button>
+                      <Stack direction="row" spacing={1} alignItems="center">
+                        <IconButton
+                          size="small"
+                          component="a"
+                          href={track.url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          title="Open in YouTube"
+                          sx={{ color: 'text.secondary', '&:hover': { color: 'primary.main' } }}
+                        >
+                          <OpenInNew fontSize="small" />
+                        </IconButton>
+                        <Button
+                          variant="outlined"
+                          size="small"
+                          startIcon={<CloudDownload />}
+                          onClick={() => handleAddToQueue(track)}
+                        >
+                          Queue
+                        </Button>
+                      </Stack>
                     }
                   >
-                    <ListItemText
-                      primary={track.title}
-                      secondary={`${track.artist} • ${track.album} • ${formatDuration(track.duration)}`}
-                      primaryTypographyProps={{ fontWeight: 600 }}
-                    />
+                    <Stack direction="row" spacing={2} alignItems="center" sx={{ mr: 12, minWidth: 0, flex: 1 }}>
+                      {track.thumbnailUrl ? (
+                        <Box
+                          component="img"
+                          src={track.thumbnailUrl}
+                          alt={track.title}
+                          sx={{
+                            width: 60,
+                            height: 45,
+                            borderRadius: 1,
+                            objectFit: 'cover',
+                            backgroundColor: '#27272a',
+                            flexShrink: 0
+                          }}
+                        />
+                      ) : (
+                        <Box
+                          sx={{
+                            width: 60,
+                            height: 45,
+                            borderRadius: 1,
+                            backgroundColor: '#27272a',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            flexShrink: 0
+                          }}
+                        >
+                          <YouTube sx={{ color: '#71717a' }} />
+                        </Box>
+                      )}
+                      <ListItemText
+                        primary={
+                          <Stack direction="row" spacing={1} alignItems="center" sx={{ minWidth: 0 }}>
+                            <Typography variant="body1" sx={{ fontWeight: 600 }} noWrap>
+                              {track.title}
+                            </Typography>
+                            <YouTube sx={{ color: '#ef4444', fontSize: 16, flexShrink: 0 }} />
+                          </Stack>
+                        }
+                        secondary={`${track.artist} • ${formatDuration(track.duration)}`}
+                        primaryTypographyProps={{ style: { overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' } }}
+                      />
+                    </Stack>
                   </ListItem>
                 ))}
               </List>
