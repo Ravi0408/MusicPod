@@ -13,16 +13,18 @@ import {
   Dashboard as DashboardIcon,
   MusicNote,
   FolderSpecial,
-  Settings as SettingsIcon
+  Settings as SettingsIcon,
+  PlaylistPlay
 } from '@mui/icons-material'
 import Dashboard from '../pages/Dashboard'
 import Library from '../pages/Library'
 import FolderScanner from '../pages/FolderScanner'
 import Settings from '../pages/Settings'
+import Playlists from '../pages/Playlists'
 import Player from '../components/Player'
 import { useLibraryStore } from '../store/libraryStore'
 
-type View = 'dashboard' | 'library' | 'scanner' | 'settings'
+type View = 'dashboard' | 'library' | 'playlists' | 'scanner' | 'settings'
 
 export default function App() {
   const [currentView, setCurrentView] = useState<View>('dashboard')
@@ -36,6 +38,7 @@ export default function App() {
   const navigationItems = [
     { id: 'dashboard', text: 'Dashboard', icon: <DashboardIcon /> },
     { id: 'library', text: 'Library', icon: <MusicNote /> },
+    { id: 'playlists', text: 'Playlists', icon: <PlaylistPlay /> },
     { id: 'scanner', text: 'Folder Scanner', icon: <FolderSpecial /> },
     { id: 'settings', text: 'Settings', icon: <SettingsIcon /> }
   ]
@@ -46,6 +49,8 @@ export default function App() {
         return <Dashboard />
       case 'library':
         return <Library />
+      case 'playlists':
+        return <Playlists />
       case 'scanner':
         return <FolderScanner />
       case 'settings':
