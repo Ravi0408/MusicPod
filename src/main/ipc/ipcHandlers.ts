@@ -8,6 +8,7 @@ import { ConverterService } from '../services/converterService'
 import { DuplicateService } from '../services/duplicateService'
 import { ScannerService } from '../services/scannerService'
 import { DownloadService, SearchResult } from '../services/downloadService'
+import { DeviceService } from '../services/deviceService'
 
 // Input validation schemas
 const scanLibrarySchema = z.string().min(1)
@@ -58,8 +59,20 @@ const addDownloadSchema = z.object({
 })
 const downloadIdSchema = z.string().min(1)
 
+// Phase 4 Schemas
+const syncDeviceSchema = z.object({
+  devicePath: z.string().min(1),
+  songs: z.array(z.any())
+})
+const backupDeviceSchema = z.string().min(1)
+const restoreDeviceSchema = z.object({
+  devicePath: z.string().min(1),
+  backupPath: z.string().min(1)
+})
+const enableVirtualDeviceSchema = z.string().min(1)
+
 export function registerIpcHandlers(mainWindow: BrowserWindow) {
-  // Initialize Download Service with main window
+  // Initialize Download Service
   DownloadService.init(mainWindow)
 
   // Common ping-pong
@@ -217,5 +230,36 @@ export function registerIpcHandlers(mainWindow: BrowserWindow) {
   ipcMain.handle('cancel-download', async (_event, id: unknown) => {
     const parsedId = downloadIdSchema.parse(id)
     DownloadService.cancelDownload(parsedId)
+  })
+
+  // --- Phase 4 Handlers ---
+
+  // Device Management & Sync
+  ipcMain.handle('get-connected-devices', async () => {
+    return DeviceService.getConnectedDevices()
+  })
+
+  ipcMain.handle('sync-device', async (_event, payload: unknown) => {
+    const { devicePath, songs } = syncDeviceSchema.parse(payload)
+    await DeviceService.syncDevice(devicePath, songs, mainWindow)
+  })
+
+  ipcMain.handle('backup-device', async (_event, devicePath: unknown) => {
+    const parsedPath = backupDeviceSchema.parse(devicePath)
+    return DeviceService.backupDevice(parsedPath)
+  })
+
+  ipcMain.handle('restore-device', async (_event, payload: unknown) => {
+    const { devicePath, backupPath } = restoreDeviceSchema.parse(payload)
+    await DeviceService.restoreDevice(devicePath, backupPath)
+  })
+
+  ipcMain.handle('enable-virtual-device', async (_event, dirName: unknown) => {
+    const parsedName = enableVirtualDeviceSchema.parse(dirName)
+    return DeviceService.enableVirtualDevice(parsedName)
+  })
+
+  ipcMain.handle('disable-virtual-device', async () => {
+    DeviceService.setSimulatedPath(null)
   })
 }

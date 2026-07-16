@@ -102,6 +102,28 @@ const electronAPI = {
     return () => {
       ipcRenderer.removeListener('download-queue-updated', subscription)
     }
+  },
+
+  // --- Phase 4 APIs ---
+
+  // Device Management & Sync
+  getConnectedDevices: (): Promise<any[]> => ipcRenderer.invoke('get-connected-devices'),
+  syncDevice: (devicePath: string, songs: any[]): Promise<void> =>
+    ipcRenderer.invoke('sync-device', { devicePath, songs }),
+  backupDevice: (devicePath: string): Promise<string> =>
+    ipcRenderer.invoke('backup-device', devicePath),
+  restoreDevice: (devicePath: string, backupPath: string): Promise<void> =>
+    ipcRenderer.invoke('restore-device', { devicePath, backupPath }),
+  enableVirtualDevice: (dirName: string): Promise<string> =>
+    ipcRenderer.invoke('enable-virtual-device', dirName),
+  disableVirtualDevice: (): Promise<void> =>
+    ipcRenderer.invoke('disable-virtual-device'),
+  onSyncProgress: (callback: (progress: any) => void): (() => void) => {
+    const subscription = (_event: any, progress: any) => callback(progress)
+    ipcRenderer.on('sync-progress', subscription)
+    return () => {
+      ipcRenderer.removeListener('sync-progress', subscription)
+    }
   }
 }
 

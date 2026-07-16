@@ -17,7 +17,8 @@ import {
   PlaylistPlay,
   Transform,
   FilterNone,
-  CloudDownload
+  CloudDownload,
+  Usb
 } from '@mui/icons-material'
 import Dashboard from '../pages/Dashboard'
 import Library from '../pages/Library'
@@ -27,6 +28,7 @@ import Playlists from '../pages/Playlists'
 import Converter from '../pages/Converter'
 import Duplicates from '../pages/Duplicates'
 import Downloads from '../pages/Downloads'
+import Devices from '../pages/Devices'
 import Player from '../components/Player'
 import { useLibraryStore } from '../store/libraryStore'
 
@@ -37,6 +39,7 @@ type View =
   | 'converter'
   | 'duplicates'
   | 'downloads'
+  | 'devices'
   | 'scanner'
   | 'settings'
 
@@ -64,6 +67,7 @@ export default function App() {
     { id: 'converter', text: 'Converter', icon: <Transform /> },
     { id: 'duplicates', text: 'Duplicates', icon: <FilterNone /> },
     { id: 'downloads', text: 'Downloads', icon: <CloudDownload /> },
+    { id: 'devices', text: 'Devices', icon: <Usb /> },
     { id: 'scanner', text: 'Folder Scanner', icon: <FolderSpecial /> },
     { id: 'settings', text: 'Settings', icon: <SettingsIcon /> }
   ]
@@ -82,6 +86,8 @@ export default function App() {
         return <Duplicates />
       case 'downloads':
         return <Downloads />
+      case 'devices':
+        return <Devices />
       case 'scanner':
         return <FolderScanner />
       case 'settings':
