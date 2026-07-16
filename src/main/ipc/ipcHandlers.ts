@@ -12,11 +12,18 @@ import { DeviceService } from '../services/deviceService'
 import { PluginService } from '../services/pluginService'
 import { AiService } from '../services/aiService'
 import { getDb } from '../database/db'
-import { songs, playlists } from '../database/schema'
+import { songs as songsTable, playlists } from '../database/schema'
 import { eq } from 'drizzle-orm'
 import crypto from 'crypto'
 
-// Input validation schemas
+// ─── Separator used to encode smart playlist header ───────────────────────────
+// Must NOT be a character that encodeURIComponent leaves unencoded.
+// encodeURIComponent encodes everything except: A–Z a–z 0–9 - _ . ! ~ * ' ( )
+// We use "||" as delimiter so colons inside the JSON value never split it.
+const SMART_PLAYLIST_SEP = '||'
+
+// ─── Input validation schemas ──────────────────────────────────────────────────
+
 const scanLibrarySchema = z.string().min(1)
 
 const updateMetadataSchema = z.object({
@@ -106,8 +113,8 @@ export function registerIpcHandlers(mainWindow: BrowserWindow) {
     return result.canceled || result.filePaths.length === 0 ? null : result.filePaths[0]
   })
 
-  // Library Scanning
-  ipcMain.handle('scan-library', async (_event, folderPath: unknown) => {
+  // Library Scanning — fire-and-forget; errors reported via scan-progress event
+  ipcMain.handle('scan-library', (_event, folderPath: unknown) => {
     const parsed = scanLibrarySchema.parse(folderPath)
     LibraryService.scanFolder(parsed, mainWindow).catch((err) => {
       console.error('Scan error in IPC:', err)
@@ -164,25 +171,27 @@ export function registerIpcHandlers(mainWindow: BrowserWindow) {
 
   ipcMain.handle('get-playlist-songs', async (_event, playlistId: unknown) => {
     const parsedId = playlistIdSchema.parse(playlistId)
-    
-    // Check if it's a Smart Playlist (name starts with smart:rule:)
+
+    // Check if it's a Smart Playlist (name starts with "smart:rule||")
     const db = getDb()
     const playlist = db.select().from(playlists).where(eq(playlists.id, parsedId)).get()
-    
-    if (playlist && playlist.name.startsWith('smart:rule:')) {
-      // Parse rules and filter from songs table directly!
+
+    if (playlist && playlist.name.startsWith(`smart:rule${SMART_PLAYLIST_SEP}`)) {
       try {
-        const headerParts = playlist.name.split(':')
-        const ruleData = JSON.parse(decodeURIComponent(headerParts[2])) as { field: string; value: string }
-        const allSongs = db.select().from(songs).all()
-        
+        // Format: "smart:rule||<encodedRules>||<humanName>"
+        const withoutPrefix = playlist.name.slice(`smart:rule${SMART_PLAYLIST_SEP}`.length)
+        const sepIndex = withoutPrefix.indexOf(SMART_PLAYLIST_SEP)
+        const encodedRules = sepIndex !== -1 ? withoutPrefix.slice(0, sepIndex) : withoutPrefix
+        const ruleData = JSON.parse(decodeURIComponent(encodedRules)) as { field: string; value: string }
+
+        const allSongs = db.select().from(songsTable).all()
         return allSongs.filter((song) => {
           if (ruleData.field === 'artist') {
             return (song.artist || '').toLowerCase().includes(ruleData.value.toLowerCase())
           } else if (ruleData.field === 'genre') {
             return (song.genre || '').toLowerCase().includes(ruleData.value.toLowerCase())
           } else if (ruleData.field === 'year') {
-            return String(song.year || '') === ruleData.value
+            return String(song.year ?? '') === ruleData.value
           }
           return false
         })
@@ -191,7 +200,7 @@ export function registerIpcHandlers(mainWindow: BrowserWindow) {
         return []
       }
     }
-    
+
     return PlaylistService.getPlaylistSongs(parsedId)
   })
 
@@ -288,8 +297,9 @@ export function registerIpcHandlers(mainWindow: BrowserWindow) {
   })
 
   ipcMain.handle('sync-device', async (_event, payload: unknown) => {
-    const { devicePath, songs } = syncDeviceSchema.parse(payload)
-    await DeviceService.syncDevice(devicePath, songs, mainWindow)
+    // Rename destructured var to avoid shadowing the songsTable import
+    const { devicePath, songs: songsList } = syncDeviceSchema.parse(payload)
+    await DeviceService.syncDevice(devicePath, songsList, mainWindow)
   })
 
   ipcMain.handle('backup-device', async (_event, devicePath: unknown) => {
@@ -330,40 +340,46 @@ export function registerIpcHandlers(mainWindow: BrowserWindow) {
   })
 
   // Create Smart Playlist
+  // Name is stored as:  "smart:rule||<encodedRules>||<humanName>"
+  // Using "||" as separator so colons inside JSON never corrupt the split.
   ipcMain.handle('create-smart-playlist', async (_event, payload: unknown) => {
     const { name, rules } = createSmartPlaylistSchema.parse(payload)
-    
-    // Store rules encoded inside name column to avoid modifying SQLite schema
-    const encodedName = `smart:rule:${encodeURIComponent(rules)}:${name}`
+
+    const encodedName = `smart:rule${SMART_PLAYLIST_SEP}${encodeURIComponent(rules)}${SMART_PLAYLIST_SEP}${name}`
     const db = getDb()
     const id = crypto.randomUUID()
     const nowStr = new Date().toISOString()
-    
+
     await db.insert(playlists).values({
       id,
       name: encodedName,
       createdAt: nowStr
     })
-    
+
     return { id, name, createdAt: nowStr }
   })
 
   // Library Analytics & Storage Statistics
   ipcMain.handle('get-library-analytics', async () => {
     const db = getDb()
-    const allSongs = db.select().from(songs).all()
+    const allSongs = db.select().from(songsTable).all()
 
     const totalSongs = allSongs.length
-    const totalDuration = allSongs.reduce((acc, s) => acc + (s.duration || 0), 0)
-    // Approximate size in MB (using bitrate calculation)
-    const totalSize = allSongs.reduce((acc, s) => acc + (s.bitrate ? (s.bitrate * s.duration) / 8 / 1024 : 0), 0)
+    const totalDuration = allSongs.reduce((acc, s) => acc + (s.duration ?? 0), 0)
+
+    // Approximate disk size in MB: (bitrate kbps * duration s) / 8 / 1024
+    const totalSize = allSongs.reduce((acc, s) => {
+      const bitrate = s.bitrate ?? 0
+      const duration = s.duration ?? 0
+      return acc + (bitrate > 0 && duration > 0 ? (bitrate * duration) / 8 / 1024 : 0)
+    }, 0)
 
     const formats: Record<string, number> = {}
     const genres: Record<string, number> = {}
     const artistsCount: Record<string, number> = {}
 
     for (const song of allSongs) {
-      const codec = (song.codec || 'mp3').toLowerCase()
+      const codec = (song.codec || 'unknown').toLowerCase()
       formats[codec] = (formats[codec] || 0) + 1
 
       const genre = song.genre || 'Unknown'
