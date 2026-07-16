@@ -1,7 +1,7 @@
 import { parseFile } from 'music-metadata'
 import { getDb } from '../database/db'
 import { songs, artists, albums } from '../database/schema'
-import { app, BrowserWindow } from 'electron'
+import { app, BrowserWindow, shell } from 'electron'
 import path from 'path'
 import fs from 'fs-extra'
 import crypto from 'crypto'
@@ -168,5 +168,21 @@ export class LibraryService {
   static async getSongs() {
     const db = getDb()
     return db.select().from(songs).all()
+  }
+
+  static async deleteSong(songId: string, deleteFile: boolean): Promise<void> {
+    const db = getDb()
+    const song = db.select().from(songs).where(eq(songs.id, songId)).get()
+    if (!song) {
+      throw new Error('Song not found')
+    }
+
+    if (deleteFile && song.filePath) {
+      if (await fs.pathExists(song.filePath)) {
+        await shell.trashItem(song.filePath)
+      }
+    }
+
+    db.delete(songs).where(eq(songs.id, songId)).run()
   }
 }

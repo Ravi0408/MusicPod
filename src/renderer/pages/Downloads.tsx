@@ -18,7 +18,12 @@ import {
   InputAdornment,
   List,
   ListItem,
-  ListItemText
+  ListItemText,
+  Tabs,
+  Tab,
+  Chip,
+  Link,
+  Tooltip
 } from '@mui/material'
 import {
   Search,
@@ -28,7 +33,10 @@ import {
   Cancel,
   CheckCircle,
   YouTube,
-  OpenInNew
+  OpenInNew,
+  DeleteSweep,
+  History,
+  CloudDone
 } from '@mui/icons-material'
 
 interface SearchResult {
@@ -50,6 +58,10 @@ interface DownloadItem {
   progress: number
   speed: string
   eta: string
+  startedAt?: string
+  finishedAt?: string
+  outputPath?: string
+  error?: string
 }
 
 export default function Downloads() {
@@ -57,6 +69,32 @@ export default function Downloads() {
   const [searchResults, setSearchResults] = useState<SearchResult[]>([])
   const [queue, setQueue] = useState<DownloadItem[]>([])
   const [isSearching, setIsSearching] = useState(false)
+  const [tab, setTab] = useState(0)
+  const [history, setHistory] = useState<DownloadItem[]>([])
+
+  const fetchHistory = async () => {
+    try {
+      const data = await window.electron.getDownloadHistory()
+      // Sort by startedAt descending so newest entries are at the top
+      const sorted = (data || []).sort((a, b) => {
+        const ad = a.startedAt ? new Date(a.startedAt).getTime() : 0
+        const bd = b.startedAt ? new Date(b.startedAt).getTime() : 0
+        return bd - ad
+      })
+      setHistory(sorted)
+    } catch (err) {
+      console.error('Failed to load download history:', err)
+    }
+  }
+
+  const handleClearHistory = async () => {
+    try {
+      await window.electron.clearDownloadHistory()
+      fetchHistory()
+    } catch (err) {
+      console.error('Failed to clear download history:', err)
+    }
+  }
 
   // Listen to queue updates from main process
   useEffect(() => {
@@ -65,9 +103,17 @@ export default function Downloads() {
 
     const unsubscribe = window.electron.onDownloadQueueUpdated((updatedQueue) => {
       setQueue(updatedQueue)
+      // If history tab is selected or any download completes, refresh history
+      fetchHistory()
     })
     return () => unsubscribe()
   }, [])
+
+  useEffect(() => {
+    if (tab === 1) {
+      fetchHistory()
+    }
+  }, [tab])
 
   const handleSearch = async () => {
     if (!query.trim()) return
@@ -98,7 +144,7 @@ export default function Downloads() {
 
   return (
     <Box sx={{ p: 4, height: 'calc(100vh - 90px)', display: 'flex', flexDirection: 'column' }}>
-      <Box sx={{ mb: 4 }}>
+      <Box sx={{ mb: 2 }}>
         <Typography variant="h4" sx={{ fontWeight: 700, mb: 1 }}>
           Downloads
         </Typography>
@@ -107,7 +153,15 @@ export default function Downloads() {
         </Typography>
       </Box>
 
-      <Grid container spacing={4} sx={{ flex: 1, minHeight: 0 }}>
+      <Box sx={{ borderBottom: 1, borderColor: 'divider', mb: 3 }}>
+        <Tabs value={tab} onChange={(_e, newValue) => setTab(newValue)} aria-label="download tabs">
+          <Tab label="Search & Active Queue" icon={<CloudDownload />} iconPosition="start" />
+          <Tab label="Download History" icon={<History />} iconPosition="start" />
+        </Tabs>
+      </Box>
+
+      {tab === 0 && (
+        <Grid container spacing={4} sx={{ flex: 1, minHeight: 0 }}>
         {/* Left Side: Search & Search Results */}
         <Grid item xs={12} md={6} sx={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
           <Stack direction="row" spacing={2} sx={{ mb: 3 }}>
@@ -325,6 +379,99 @@ export default function Downloads() {
           </TableContainer>
         </Grid>
       </Grid>
+      )}
+
+      {tab === 1 && (
+        <Box sx={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0 }}>
+          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+            <Typography variant="h6" sx={{ fontWeight: 600 }}>
+              Completed & Past Downloads
+            </Typography>
+            <Button
+              variant="outlined"
+              color="error"
+              startIcon={<DeleteSweep />}
+              onClick={handleClearHistory}
+              disabled={history.length === 0}
+            >
+              Clear History
+            </Button>
+          </Box>
+
+          <TableContainer component={Paper} sx={{ flex: 1, overflowY: 'auto', border: '1px solid #27272a' }}>
+            <Table size="small">
+              <TableHead>
+                <TableRow>
+                  <TableCell>Title</TableCell>
+                  <TableCell>Provider</TableCell>
+                  <TableCell>Status</TableCell>
+                  <TableCell>Finished At</TableCell>
+                  <TableCell align="right">File Path</TableCell>
+                </TableRow>
+              </TableHead>
+              <TableBody>
+                {history.length === 0 ? (
+                  <TableRow>
+                    <TableCell colSpan={5} align="center" sx={{ py: 8, color: 'text.secondary' }}>
+                      No download history recorded.
+                    </TableCell>
+                  </TableRow>
+                ) : (
+                  history.map((item) => (
+                    <TableRow key={item.id}>
+                      <TableCell sx={{ fontWeight: 600 }}>{item.title}</TableCell>
+                      <TableCell>{item.provider}</TableCell>
+                      <TableCell>
+                        {item.status === 'completed' && (
+                          <Chip
+                            label="Completed"
+                            color="success"
+                            size="small"
+                            variant="outlined"
+                            icon={<CloudDone fontSize="small" />}
+                          />
+                        )}
+                        {item.status === 'failed' && (
+                          <Tooltip title={item.error || 'Unknown error'}>
+                            <Chip
+                              label="Failed"
+                              color="error"
+                              size="small"
+                              variant="outlined"
+                            />
+                          </Tooltip>
+                        )}
+                        {item.status !== 'completed' && item.status !== 'failed' && (
+                          <Chip
+                            label={item.status.toUpperCase()}
+                            color="default"
+                            size="small"
+                            variant="outlined"
+                          />
+                        )}
+                      </TableCell>
+                      <TableCell>
+                        {item.finishedAt ? new Date(item.finishedAt).toLocaleString() : '--'}
+                      </TableCell>
+                      <TableCell align="right" sx={{ fontFamily: 'monospace', fontSize: '11px', maxWidth: 300, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        {item.outputPath ? (
+                          <Tooltip title={item.outputPath}>
+                            <Link href="#" onClick={(e) => e.preventDefault()} sx={{ color: 'primary.main', textDecoration: 'none' }}>
+                              {item.outputPath}
+                            </Link>
+                          </Tooltip>
+                        ) : (
+                          '--'
+                        )}
+                      </TableCell>
+                    </TableRow>
+                  ))
+                )}
+              </TableBody>
+            </Table>
+          </TableContainer>
+        </Box>
+      )}
     </Box>
   )
 }

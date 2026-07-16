@@ -24,7 +24,9 @@ import {
   ListItem,
   ListItemButton,
   ListItemIcon,
-  ListItemText
+  ListItemText,
+  Checkbox,
+  FormControlLabel
 } from '@mui/material'
 import {
   PlayArrow,
@@ -34,7 +36,8 @@ import {
   PlaylistAdd,
   Edit,
   PlaylistPlay,
-  AutoAwesome
+  AutoAwesome,
+  Delete
 } from '@mui/icons-material'
 import { useLibraryStore } from '../store/libraryStore'
 import { usePlayerStore, Song } from '../store/playerStore'
@@ -64,6 +67,10 @@ export default function Library() {
   // Playlist Adder Dialog State
   const [playlistAdderOpen, setPlaylistAdderOpen] = useState(false)
   const [playlists, setPlaylists] = useState<Playlist[]>([])
+
+  // Delete Dialog State
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
+  const [deleteFile, setDeleteFile] = useState(true)
 
   const handlePlaySong = (song: Song) => {
     setQueue(filteredSongs)
@@ -116,6 +123,25 @@ export default function Library() {
       alert(`Added "${selectedSong.title}" to playlist!`)
     } catch (err) {
       console.error('Failed to add song to playlist:', err)
+    }
+  }
+
+  const handleOpenDeleteDialog = () => {
+    handleCloseContextMenu()
+    setDeleteDialogOpen(true)
+  }
+
+  const handleDeleteSong = async () => {
+    if (!selectedSong) return
+    try {
+      await window.electron.deleteSong(selectedSong.id, deleteFile)
+      setDeleteDialogOpen(false)
+      if (currentSong?.id === selectedSong.id) {
+        usePlayerStore.getState().setCurrentSong(null)
+      }
+      fetchSongs()
+    } catch (err) {
+      console.error('Failed to delete song:', err)
     }
   }
 
@@ -273,6 +299,12 @@ export default function Library() {
           </ListItemIcon>
           Add to Playlist...
         </MenuItem>
+        <MenuItem onClick={handleOpenDeleteDialog} sx={{ color: 'error.main' }}>
+          <ListItemIcon>
+            <Delete fontSize="small" color="error" />
+          </ListItemIcon>
+          Delete from Library...
+        </MenuItem>
       </Menu>
 
       {/* Metadata Editor Dialog */}
@@ -339,6 +371,38 @@ export default function Library() {
         <DialogActions sx={{ p: 2 }}>
           <Button onClick={() => setPlaylistAdderOpen(false)} color="inherit">
             Close
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Delete Song Confirmation Dialog */}
+      <Dialog open={deleteDialogOpen} onClose={() => setDeleteDialogOpen(false)} fullWidth maxWidth="xs">
+        <DialogTitle sx={{ fontWeight: 700 }}>Delete Song</DialogTitle>
+        <DialogContent dividers>
+          <Typography variant="body2" sx={{ mb: 2 }}>
+            Are you sure you want to delete <strong>{selectedSong?.title}</strong> from your library?
+          </Typography>
+          <FormControlLabel
+            control={
+              <Checkbox
+                checked={deleteFile}
+                onChange={(e) => setDeleteFile(e.target.checked)}
+                color="error"
+              />
+            }
+            label={
+              <Typography variant="body2" color="error">
+                Also move the audio file to Trash
+              </Typography>
+            }
+          />
+        </DialogContent>
+        <DialogActions sx={{ p: 2 }}>
+          <Button onClick={() => setDeleteDialogOpen(false)} color="inherit">
+            Cancel
+          </Button>
+          <Button onClick={handleDeleteSong} color="error" variant="contained">
+            Delete
           </Button>
         </DialogActions>
       </Dialog>

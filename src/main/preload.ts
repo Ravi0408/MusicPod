@@ -69,6 +69,8 @@ const electronAPI = {
     ipcRenderer.invoke('find-duplicates', method),
   trashSong: (songId: string): Promise<void> =>
     ipcRenderer.invoke('trash-song', songId),
+  deleteSong: (songId: string, deleteFile: boolean): Promise<void> =>
+    ipcRenderer.invoke('delete-song', { songId, deleteFile }),
 
   // Folder Watcher
   startWatchingFolder: (folderPath: string): Promise<void> =>
@@ -90,6 +92,10 @@ const electronAPI = {
     ipcRenderer.invoke('add-to-download-queue', track),
   getDownloadQueue: (): Promise<any[]> =>
     ipcRenderer.invoke('get-download-queue'),
+  getDownloadHistory: (): Promise<any[]> =>
+    ipcRenderer.invoke('get-download-history'),
+  clearDownloadHistory: (): Promise<void> =>
+    ipcRenderer.invoke('clear-download-history'),
   pauseDownload: (id: string): Promise<void> =>
     ipcRenderer.invoke('pause-download', id),
   resumeDownload: (id: string): Promise<void> =>

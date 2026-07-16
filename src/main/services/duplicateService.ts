@@ -4,6 +4,7 @@ import { eq } from 'drizzle-orm'
 import { shell } from 'electron'
 import crypto from 'crypto'
 import fs from 'fs-extra'
+import { LibraryService } from './libraryService'
 
 export interface DuplicateGroup {
   key: string
@@ -47,18 +48,7 @@ export class DuplicateService {
   }
 
   static async trashSong(songId: string) {
-    const db = getDb()
-    const song = db.select().from(songs).where(eq(songs.id, songId)).get()
-    if (!song) {
-      throw new Error('Song not found')
-    }
-
-    // Move to system Trash instead of direct hard delete for safety
-    if (await fs.pathExists(song.filePath)) {
-      await shell.trashItem(song.filePath)
-    }
-
-    db.delete(songs).where(eq(songs.id, songId)).run()
+    await LibraryService.deleteSong(songId, true)
   }
 
   private static async getFileHash(filePath: string): Promise<string> {

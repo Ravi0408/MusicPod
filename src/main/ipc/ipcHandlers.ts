@@ -74,6 +74,11 @@ const addDownloadSchema = z.object({
 })
 const downloadIdSchema = z.string().min(1)
 
+const deleteSongSchema = z.object({
+  songId: z.string().min(1),
+  deleteFile: z.boolean()
+})
+
 // Phase 4 Schemas
 const syncDeviceSchema = z.object({
   devicePath: z.string().min(1),
@@ -250,6 +255,11 @@ export function registerIpcHandlers(mainWindow: BrowserWindow) {
     await DuplicateService.trashSong(parsedId)
   })
 
+  ipcMain.handle('delete-song', async (_event, payload: unknown) => {
+    const { songId, deleteFile } = deleteSongSchema.parse(payload)
+    await LibraryService.deleteSong(songId, deleteFile)
+  })
+
   // Folder Watcher
   ipcMain.handle('start-watching-folder', async (_event, folderPath: unknown) => {
     const parsedPath = watchFolderSchema.parse(folderPath)
@@ -274,6 +284,14 @@ export function registerIpcHandlers(mainWindow: BrowserWindow) {
 
   ipcMain.handle('get-download-queue', async () => {
     return DownloadService.getQueue()
+  })
+
+  ipcMain.handle('get-download-history', async () => {
+    return DownloadService.getHistory()
+  })
+
+  ipcMain.handle('clear-download-history', async () => {
+    DownloadService.clearHistory()
   })
 
   ipcMain.handle('pause-download', async (_event, id: unknown) => {

@@ -2,7 +2,7 @@ import { app, BrowserWindow } from 'electron'
 import { ChildProcess } from 'child_process'
 import { getDb } from '../database/db'
 import { downloads } from '../database/schema'
-import { eq } from 'drizzle-orm'
+import { eq, and, ne } from 'drizzle-orm'
 import path from 'path'
 import fs from 'fs-extra'
 import crypto from 'crypto'
@@ -95,6 +95,22 @@ export class DownloadService {
 
   static getQueue() {
     return this.queue
+  }
+
+  static getHistory() {
+    const db = getDb()
+    return db.select().from(downloads).all()
+  }
+
+  static clearHistory() {
+    const db = getDb()
+    db.delete(downloads).where(
+      and(
+        ne(downloads.status, 'pending'),
+        ne(downloads.status, 'downloading'),
+        ne(downloads.status, 'paused')
+      )
+    ).run()
   }
 
   static pauseDownload(id: string) {
