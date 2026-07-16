@@ -1,0 +1,23 @@
+# Dependency directories
+node_modules/
+
+# Build outputs
+dist/
+out/
+build/
+
+# SQLite databases and logs
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+logs/
+
+# IDE files
+.vscode/
+.idea/
+.DS_Store
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
