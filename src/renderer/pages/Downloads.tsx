@@ -5,8 +5,6 @@ import {
   TextField,
   Button,
   Grid,
-  Card,
-  CardContent,
   Table,
   TableBody,
   TableCell,
@@ -18,7 +16,9 @@ import {
   Stack,
   IconButton,
   InputAdornment,
-  Divider
+  List,
+  ListItem,
+  ListItemText
 } from '@mui/material'
 import {
   Search,
@@ -26,8 +26,7 @@ import {
   Pause,
   PlayArrow,
   Cancel,
-  CheckCircle,
-  HourglassEmpty
+  CheckCircle
 } from '@mui/icons-material'
 
 interface SearchResult {
@@ -149,7 +148,10 @@ export default function Downloads() {
                       p: 2,
                       backgroundColor: 'background.default',
                       borderRadius: 1.5,
-                      border: '1px solid #27272a'
+                      border: '1px solid #27272a',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between'
                     }}
                     secondaryAction={
                       <Button
@@ -267,19 +269,6 @@ export default function Downloads() {
           </TableContainer>
         </Grid>
       </Grid>
-    </Box>
-  )
-}
-
-function List({ children, disablePadding }: { children: React.ReactNode; disablePadding?: boolean }) {
-  return <Box sx={{ py: disablePadding ? 0 : 1 }}>{children}</Box>
-}
-
-function ListItem({ children, sx, secondaryAction }: { children: React.ReactNode; sx?: any; secondaryAction?: React.ReactNode }) {
-  return (
-    <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', ...sx }}>
-      <Box sx={{ flex: 1 }}>{children}</Box>
-      {secondaryAction && <Box sx={{ ml: 2 }}>{secondaryAction}</Box>}
     </Box>
   )
 }

@@ -13,6 +13,7 @@ import { PluginService } from '../services/pluginService'
 import { AiService } from '../services/aiService'
 import { getDb } from '../database/db'
 import { songs, playlists } from '../database/schema'
+import { eq } from 'drizzle-orm'
 import crypto from 'crypto'
 
 // Input validation schemas

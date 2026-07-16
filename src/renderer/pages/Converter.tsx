@@ -18,7 +18,6 @@ import {
 } from '@mui/material'
 import {
   Transform,
-  PlayArrow,
   CheckCircle,
   ErrorOutline,
   FolderOpen
@@ -108,7 +107,7 @@ export default function Converter() {
               Select Source File
             </Typography>
 
-            <GridContainer>
+            <Box>
               <Autocomplete
                 options={songs}
                 getOptionLabel={(option) => `${option.title} - ${option.artist || 'Unknown Artist'}`}
@@ -154,7 +153,7 @@ export default function Converter() {
                   {customFilePath || (selectedSong ? selectedSong.filePath : 'No file chosen')}
                 </Typography>
               </Stack>
-            </GridContainer>
+            </Box>
           </CardContent>
         </Card>
 
@@ -258,8 +257,4 @@ export default function Converter() {
       </Box>
     </Box>
   )
-}
-
-function GridContainer({ children }: { children: React.ReactNode }) {
-  return <Box>{children}</Box>
 }
