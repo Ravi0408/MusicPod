@@ -1,4 +1,4 @@
-import React, { useRef, useEffect } from 'react'
+import { useRef, useEffect, useState } from 'react'
 import {
   Box,
   IconButton,
@@ -23,7 +23,12 @@ import { usePlayerStore } from '../store/playerStore'
 
 export default function Player() {
   const audioRef = useRef<HTMLAudioElement | null>(null)
-  
+
+  // Tracks the slider position while the user is dragging.
+  // We do NOT write to audioRef during drag — only on release.
+  const [seekValue, setSeekValue] = useState<number | null>(null)
+  const isSeeking = seekValue !== null
+
   const {
     currentSong,
     isPlaying,
@@ -45,12 +50,11 @@ export default function Player() {
     setVolume
   } = usePlayerStore()
 
-  // Sync audio source
+  // Sync audio source when song changes
   useEffect(() => {
     if (!audioRef.current) return
 
     if (currentSong) {
-      // Use the media custom protocol to securely stream the local file
       const sourceUrl = `media://${encodeURIComponent(currentSong.filePath)}`
       audioRef.current.src = sourceUrl
       if (isPlaying) {
@@ -62,9 +66,11 @@ export default function Player() {
     } else {
       audioRef.current.src = ''
     }
+    // Reset seek state on song change
+    setSeekValue(null)
   }, [currentSong])
 
-  // Sync play/pause state
+  // Sync play/pause
   useEffect(() => {
     if (!audioRef.current || !currentSong) return
 
@@ -78,15 +84,16 @@ export default function Player() {
     }
   }, [isPlaying])
 
-  // Sync volume & mute state
+  // Sync volume & mute
   useEffect(() => {
     if (!audioRef.current) return
     audioRef.current.volume = volume
     audioRef.current.muted = isMuted
   }, [volume, isMuted])
 
+  // Fired ~4x per second by the browser — only update store when not seeking
   const handleTimeUpdate = () => {
-    if (!audioRef.current) return
+    if (!audioRef.current || isSeeking) return
     setCurrentTime(audioRef.current.currentTime)
   }
 
@@ -106,12 +113,19 @@ export default function Player() {
     }
   }
 
+  // While dragging: just update the visual slider position (no audio seek yet)
   const handleSeekChange = (_event: Event, newValue: number | number[]) => {
+    setSeekValue(newValue as number)
+  }
+
+  // On mouse-up / touch-end: perform the actual seek
+  const handleSeekCommit = (_event: Event | React.SyntheticEvent, newValue: number | number[]) => {
     const seekTime = newValue as number
     if (audioRef.current) {
       audioRef.current.currentTime = seekTime
-      setCurrentTime(seekTime)
     }
+    setCurrentTime(seekTime)
+    setSeekValue(null)
   }
 
   const handleVolumeChange = (_event: Event, newValue: number | number[]) => {
@@ -119,11 +133,14 @@ export default function Player() {
   }
 
   const formatTime = (timeInSeconds: number) => {
-    if (isNaN(timeInSeconds)) return '0:00'
+    if (!timeInSeconds || isNaN(timeInSeconds)) return '0:00'
     const minutes = Math.floor(timeInSeconds / 60)
     const seconds = Math.floor(timeInSeconds % 60)
     return `${minutes}:${seconds < 10 ? '0' : ''}${seconds}`
   }
+
+  // The displayed slider value: seekValue while dragging, currentTime otherwise
+  const displayedTime = isSeeking ? seekValue! : currentTime
 
   return (
     <Box
@@ -191,7 +208,7 @@ export default function Player() {
               <Shuffle fontSize="small" />
             </IconButton>
           </Tooltip>
-          
+
           <IconButton onClick={playPrevious} disabled={!currentSong} size="medium">
             <SkipPrevious />
           </IconButton>
@@ -222,15 +239,16 @@ export default function Player() {
         </Stack>
 
         <Stack direction="row" spacing={2} sx={{ width: '100%', mt: 0.5 }} alignItems="center">
-          <Typography variant="caption" color="text.secondary">
-            {formatTime(currentTime)}
+          <Typography variant="caption" color="text.secondary" sx={{ minWidth: 36, textAlign: 'right' }}>
+            {formatTime(displayedTime)}
           </Typography>
           <Slider
             size="small"
-            value={currentTime}
+            value={displayedTime}
             min={0}
             max={duration || 100}
             onChange={handleSeekChange}
+            onChangeCommitted={handleSeekCommit}
             disabled={!currentSong}
             sx={{
               py: 1,
@@ -248,7 +266,7 @@ export default function Player() {
               }
             }}
           />
-          <Typography variant="caption" color="text.secondary">
+          <Typography variant="caption" color="text.secondary" sx={{ minWidth: 36 }}>
             {formatTime(duration)}
           </Typography>
         </Stack>
