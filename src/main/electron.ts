@@ -1,6 +1,7 @@
 import { app, BrowserWindow, protocol, net } from 'electron'
 import path from 'path'
 import { pathToFileURL } from 'url'
+import fs from 'fs'
 import { initDb } from './database/db'
 import { registerIpcHandlers } from './ipc/ipcHandlers'
 
@@ -56,16 +57,108 @@ function createWindow() {
   })
 }
 
+/**
+ * Serve a local file with proper Range request support so the browser's
+ * <audio> element can seek freely.  Without 206 Partial Content responses,
+ * audioElement.currentTime writes are silently ignored.
+ */
+function handleMediaProtocol(request: Request): Response {
+  const encodedPath = request.url.slice('media://'.length)
+  const filePath = decodeURIComponent(encodedPath)
+
+  let stat: fs.Stats
+  try {
+    stat = fs.statSync(filePath)
+  } catch {
+    return new Response('File not found', { status: 404 })
+  }
+
+  const fileSize = stat.size
+  const rangeHeader = request.headers.get('range')
+
+  if (rangeHeader) {
+    // Parse "bytes=start-end"
+    const match = rangeHeader.match(/bytes=(\d+)-(\d*)/)
+    if (!match) {
+      return new Response('Invalid range', { status: 416 })
+    }
+
+    const start = parseInt(match[1], 10)
+    const end = match[2] ? parseInt(match[2], 10) : fileSize - 1
+    const chunkSize = end - start + 1
+
+    const stream = fs.createReadStream(filePath, { start, end })
+
+    // Convert Node.js ReadableStream → Web ReadableStream
+    const webStream = new ReadableStream({
+      start(controller) {
+        stream.on('data', (chunk) => controller.enqueue(chunk))
+        stream.on('end', () => controller.close())
+        stream.on('error', (err) => controller.error(err))
+      },
+      cancel() {
+        stream.destroy()
+      }
+    })
+
+    return new Response(webStream, {
+      status: 206,
+      headers: {
+        'Content-Range': `bytes ${start}-${end}/${fileSize}`,
+        'Accept-Ranges': 'bytes',
+        'Content-Length': String(chunkSize),
+        'Content-Type': getMimeType(filePath)
+      }
+    })
+  }
+
+  // No Range header — serve the whole file
+  const stream = fs.createReadStream(filePath)
+  const webStream = new ReadableStream({
+    start(controller) {
+      stream.on('data', (chunk) => controller.enqueue(chunk))
+      stream.on('end', () => controller.close())
+      stream.on('error', (err) => controller.error(err))
+    },
+    cancel() {
+      stream.destroy()
+    }
+  })
+
+  return new Response(webStream, {
+    status: 200,
+    headers: {
+      'Accept-Ranges': 'bytes',
+      'Content-Length': String(fileSize),
+      'Content-Type': getMimeType(filePath)
+    }
+  })
+}
+
+function getMimeType(filePath: string): string {
+  const ext = path.extname(filePath).toLowerCase()
+  const mimeMap: Record<string, string> = {
+    '.mp3': 'audio/mpeg',
+    '.flac': 'audio/flac',
+    '.m4a': 'audio/mp4',
+    '.aac': 'audio/aac',
+    '.ogg': 'audio/ogg',
+    '.wav': 'audio/wav',
+    '.alac': 'audio/mp4',
+    '.jpg': 'image/jpeg',
+    '.jpeg': 'image/jpeg',
+    '.png': 'image/png',
+    '.webp': 'image/webp'
+  }
+  return mimeMap[ext] ?? 'application/octet-stream'
+}
+
 app.whenReady().then(() => {
   // Initialize Database
   initDb()
 
-  // Register media:// custom protocol to safely load local music files
-  protocol.handle('media', (request) => {
-    const encodedPath = request.url.slice('media://'.length)
-    const filePath = decodeURIComponent(encodedPath)
-    return net.fetch(pathToFileURL(filePath).toString())
-  })
+  // Register media:// custom protocol with Range request support for seeking
+  protocol.handle('media', handleMediaProtocol)
 
   createWindow()
 
