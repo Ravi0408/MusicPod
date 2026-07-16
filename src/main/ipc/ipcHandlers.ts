@@ -9,6 +9,11 @@ import { DuplicateService } from '../services/duplicateService'
 import { ScannerService } from '../services/scannerService'
 import { DownloadService, SearchResult } from '../services/downloadService'
 import { DeviceService } from '../services/deviceService'
+import { PluginService } from '../services/pluginService'
+import { AiService } from '../services/aiService'
+import { getDb } from '../database/db'
+import { songs, playlists } from '../database/schema'
+import crypto from 'crypto'
 
 // Input validation schemas
 const scanLibrarySchema = z.string().min(1)
@@ -70,6 +75,20 @@ const restoreDeviceSchema = z.object({
   backupPath: z.string().min(1)
 })
 const enableVirtualDeviceSchema = z.string().min(1)
+
+// Phase 5 Schemas
+const installPluginSchema = z.object({
+  id: z.string().min(1),
+  name: z.string().min(1),
+  version: z.string(),
+  description: z.string(),
+  type: z.enum(['downloader', 'lyrics'])
+})
+const aiCleanupSuggestSchema = z.string().min(1)
+const createSmartPlaylistSchema = z.object({
+  name: z.string().min(1),
+  rules: z.string().min(1) // JSON formatted string representing filters
+})
 
 export function registerIpcHandlers(mainWindow: BrowserWindow) {
   // Initialize Download Service
@@ -144,6 +163,34 @@ export function registerIpcHandlers(mainWindow: BrowserWindow) {
 
   ipcMain.handle('get-playlist-songs', async (_event, playlistId: unknown) => {
     const parsedId = playlistIdSchema.parse(playlistId)
+    
+    // Check if it's a Smart Playlist (name starts with smart:rule:)
+    const db = getDb()
+    const playlist = db.select().from(playlists).where(eq(playlists.id, parsedId)).get()
+    
+    if (playlist && playlist.name.startsWith('smart:rule:')) {
+      // Parse rules and filter from songs table directly!
+      try {
+        const headerParts = playlist.name.split(':')
+        const ruleData = JSON.parse(decodeURIComponent(headerParts[2])) as { field: string; value: string }
+        const allSongs = db.select().from(songs).all()
+        
+        return allSongs.filter((song) => {
+          if (ruleData.field === 'artist') {
+            return (song.artist || '').toLowerCase().includes(ruleData.value.toLowerCase())
+          } else if (ruleData.field === 'genre') {
+            return (song.genre || '').toLowerCase().includes(ruleData.value.toLowerCase())
+          } else if (ruleData.field === 'year') {
+            return String(song.year || '') === ruleData.value
+          }
+          return false
+        })
+      } catch (err) {
+        console.error('Failed to parse smart playlist rules:', err)
+        return []
+      }
+    }
+    
     return PlaylistService.getPlaylistSongs(parsedId)
   })
 
@@ -261,5 +308,77 @@ export function registerIpcHandlers(mainWindow: BrowserWindow) {
 
   ipcMain.handle('disable-virtual-device', async () => {
     DeviceService.setSimulatedPath(null)
+  })
+
+  // --- Phase 5 Handlers ---
+
+  // Plugin SDK
+  ipcMain.handle('get-installed-plugins', async () => {
+    return PluginService.getInstalledPlugins()
+  })
+
+  ipcMain.handle('install-plugin', async (_event, payload: unknown) => {
+    const manifest = installPluginSchema.parse(payload)
+    await PluginService.installPlugin(manifest)
+  })
+
+  // AI Tag Cleanup Heuristics
+  ipcMain.handle('ai-cleanup-suggest', async (_event, songId: unknown) => {
+    const parsedId = aiCleanupSuggestSchema.parse(songId)
+    return AiService.suggestCleanup(parsedId)
+  })
+
+  // Create Smart Playlist
+  ipcMain.handle('create-smart-playlist', async (_event, payload: unknown) => {
+    const { name, rules } = createSmartPlaylistSchema.parse(payload)
+    
+    // Store rules encoded inside name column to avoid modifying SQLite schema
+    const encodedName = `smart:rule:${encodeURIComponent(rules)}:${name}`
+    const db = getDb()
+    const id = crypto.randomUUID()
+    const nowStr = new Date().toISOString()
+    
+    await db.insert(playlists).values({
+      id,
+      name: encodedName,
+      createdAt: nowStr
+    })
+    
+    return { id, name, createdAt: nowStr }
+  })
+
+  // Library Analytics & Storage Statistics
+  ipcMain.handle('get-library-analytics', async () => {
+    const db = getDb()
+    const allSongs = db.select().from(songs).all()
+
+    const totalSongs = allSongs.length
+    const totalDuration = allSongs.reduce((acc, s) => acc + (s.duration || 0), 0)
+    // Approximate size in MB (using bitrate calculation)
+    const totalSize = allSongs.reduce((acc, s) => acc + (s.bitrate ? (s.bitrate * s.duration) / 8 / 1024 : 0), 0)
+
+    const formats: Record<string, number> = {}
+    const genres: Record<string, number> = {}
+    const artistsCount: Record<string, number> = {}
+
+    for (const song of allSongs) {
+      const codec = (song.codec || 'mp3').toLowerCase()
+      formats[codec] = (formats[codec] || 0) + 1
+
+      const genre = song.genre || 'Unknown'
+      genres[genre] = (genres[genre] || 0) + 1
+
+      const artist = song.artist || 'Unknown Artist'
+      artistsCount[artist] = (artistsCount[artist] || 0) + 1
+    }
+
+    return {
+      totalSongs,
+      totalDuration,
+      totalSize,
+      formats,
+      genres,
+      artists: Object.keys(artistsCount).length
+    }
   })
 }

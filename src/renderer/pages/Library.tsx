@@ -33,11 +33,13 @@ import {
   Timer,
   PlaylistAdd,
   Edit,
-  PlaylistPlay
+  PlaylistPlay,
+  AutoAwesome
 } from '@mui/icons-material'
 import { useLibraryStore } from '../store/libraryStore'
 import { usePlayerStore, Song } from '../store/playerStore'
 import MetadataEditor from '../dialogs/MetadataEditor'
+import AiCleanupDialog from '../dialogs/AiCleanupDialog'
 import { Playlist } from './Playlists'
 
 export default function Library() {
@@ -56,6 +58,9 @@ export default function Library() {
   // Editor Dialog State
   const [editorOpen, setEditorOpen] = useState(false)
   
+  // AI Cleanup Dialog State
+  const [aiCleanupOpen, setAiCleanupOpen] = useState(false)
+
   // Playlist Adder Dialog State
   const [playlistAdderOpen, setPlaylistAdderOpen] = useState(false)
   const [playlists, setPlaylists] = useState<Playlist[]>([])
@@ -82,6 +87,13 @@ export default function Library() {
     handleCloseContextMenu()
     if (selectedSong) {
       setEditorOpen(true)
+    }
+  }
+
+  const handleOpenAiCleanup = () => {
+    handleCloseContextMenu()
+    if (selectedSong) {
+      setAiCleanupOpen(true)
     }
   }
 
@@ -157,29 +169,27 @@ export default function Library() {
             justifyContent: 'center',
             flexDirection: 'column',
             p: 4,
-            border: '1px solid #27272a'
+            border: '1px dashed #27272a',
+            backgroundColor: 'transparent'
           }}
         >
-          <MusicNote sx={{ fontSize: 64, color: 'text.secondary', mb: 2 }} />
-          <Typography variant="h6" color="text.secondary" sx={{ mb: 1 }}>
-            No songs found
-          </Typography>
+          <MusicNote sx={{ fontSize: 48, color: 'text.secondary', mb: 2 }} />
           <Typography variant="body2" color="text.secondary">
-            Try adjusting your search query, or use the Folder Scanner to import music folders.
+            No music found. Add a folder to scan in the Folder Scanner tab!
           </Typography>
         </Paper>
       ) : (
-        <TableContainer component={Paper} sx={{ flex: 1, overflow: 'auto', border: '1px solid #27272a' }}>
-          <Table stickyHeader size="medium">
+        <TableContainer sx={{ flex: 1, overflowY: 'auto', border: '1px solid #27272a', borderRadius: 1 }}>
+          <Table size="small" stickyHeader>
             <TableHead>
               <TableRow>
-                <TableCell width={50}></TableCell>
-                <TableCell width={60}>Cover</TableCell>
+                <TableCell width={40}></TableCell>
+                <TableCell width={50}>Cover</TableCell>
                 <TableCell>Title</TableCell>
                 <TableCell>Artist</TableCell>
                 <TableCell>Album</TableCell>
                 <TableCell>Format</TableCell>
-                <TableCell align="right" width={100}>
+                <TableCell align="right" width={90}>
                   <Timer fontSize="small" sx={{ mr: 1, verticalAlign: 'middle' }} />
                 </TableCell>
               </TableRow>
@@ -192,9 +202,9 @@ export default function Library() {
                     key={song.id}
                     hover
                     selected={isCurrent}
-                    onClick={() => handlePlaySong(song)}
                     onContextMenu={(e) => handleRowContextMenu(e, song)}
-                    sx={{ cursor: 'pointer', '&.Mui-selected': { backgroundColor: 'action.selected' } }}
+                    onClick={() => handlePlaySong(song)}
+                    sx={{ cursor: 'pointer' }}
                   >
                     <TableCell onClick={(e) => { e.stopPropagation(); handlePlaySong(song); }}>
                       <IconButton size="small" color={isCurrent ? 'primary' : 'default'}>
@@ -218,12 +228,12 @@ export default function Library() {
                     <TableCell sx={{ fontWeight: 600, color: isCurrent ? 'primary.main' : 'text.primary' }}>
                       {song.title}
                     </TableCell>
-                    <TableCell color="text.secondary">{song.artist || 'Unknown Artist'}</TableCell>
-                    <TableCell color="text.secondary">{song.album || 'Unknown Album'}</TableCell>
-                    <TableCell color="text.secondary">
+                    <TableCell>{song.artist || 'Unknown Artist'}</TableCell>
+                    <TableCell>{song.album || 'Unknown Album'}</TableCell>
+                    <TableCell>
                       {song.codec?.toUpperCase() || 'MP3'} {song.bitrate ? `(${song.bitrate} kbps)` : ''}
                     </TableCell>
-                    <TableCell align="right" color="text.secondary">
+                    <TableCell align="right">
                       {formatDuration(song.duration)}
                     </TableCell>
                   </TableRow>
@@ -251,6 +261,12 @@ export default function Library() {
           </ListItemIcon>
           Edit Metadata
         </MenuItem>
+        <MenuItem onClick={handleOpenAiCleanup}>
+          <ListItemIcon>
+            <AutoAwesome fontSize="small" color="secondary" />
+          </ListItemIcon>
+          AI Cleanup (Heuristics)
+        </MenuItem>
         <MenuItem onClick={handleOpenPlaylistAdder}>
           <ListItemIcon>
             <PlaylistAdd fontSize="small" />
@@ -268,7 +284,6 @@ export default function Library() {
           onSave={() => {
             fetchSongs()
             if (currentSong?.id === selectedSong.id) {
-              // Update playing song state
               window.electron.getSongs().then((allSongs) => {
                 const refreshed = allSongs.find((s) => s.id === selectedSong.id)
                 if (refreshed) {
@@ -277,6 +292,16 @@ export default function Library() {
               })
             }
           }}
+        />
+      )}
+
+      {/* AI Metadata Cleanup Dialog */}
+      {selectedSong && aiCleanupOpen && (
+        <AiCleanupDialog
+          open={aiCleanupOpen}
+          songId={selectedSong.id}
+          onClose={() => setAiCleanupOpen(false)}
+          onSaved={fetchSongs}
         />
       )}
 
@@ -292,16 +317,22 @@ export default function Library() {
             </Box>
           ) : (
             <List>
-              {playlists.map((playlist) => (
-                <ListItem key={playlist.id} disablePadding>
-                  <ListItemButton onClick={() => handleAddSongToPlaylist(playlist.id)}>
-                    <ListItemIcon>
-                      <PlaylistPlay />
-                    </ListItemIcon>
-                    <ListItemText primary={playlist.name} />
-                  </ListItemButton>
-                </ListItem>
-              ))}
+              {playlists.map((playlist) => {
+                const parts = playlist.name.split(':')
+                const isSmart = playlist.name.startsWith('smart:rule:')
+                const displayName = isSmart ? parts[3] : playlist.name
+                
+                return (
+                  <ListItem key={playlist.id} disablePadding>
+                    <ListItemButton onClick={() => handleAddSongToPlaylist(playlist.id)} disabled={isSmart}>
+                      <ListItemIcon>
+                        {isSmart ? <AutoAwesome sx={{ fontSize: 20 }} /> : <PlaylistPlay />}
+                      </ListItemIcon>
+                      <ListItemText primary={displayName} secondary={isSmart ? 'Smart (Auto-adds)' : undefined} />
+                    </ListItemButton>
+                  </ListItem>
+                )
+              })}
             </List>
           )}
         </DialogContent>

@@ -124,7 +124,17 @@ const electronAPI = {
     return () => {
       ipcRenderer.removeListener('sync-progress', subscription)
     }
-  }
+  },
+
+  // --- Phase 5 APIs ---
+
+  // Plugins, AI Cleanup, Smart Playlists, & Analytics
+  getInstalledPlugins: (): Promise<any[]> => ipcRenderer.invoke('get-installed-plugins'),
+  installPlugin: (manifest: any): Promise<void> => ipcRenderer.invoke('install-plugin', manifest),
+  aiCleanupSuggest: (songId: string): Promise<any> => ipcRenderer.invoke('ai-cleanup-suggest', songId),
+  createSmartPlaylist: (name: string, rules: string): Promise<any> =>
+    ipcRenderer.invoke('create-smart-playlist', { name, rules }),
+  getLibraryAnalytics: (): Promise<any> => ipcRenderer.invoke('get-library-analytics')
 }
 
 contextBridge.exposeInMainWorld('electron', electronAPI)

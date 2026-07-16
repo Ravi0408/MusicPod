@@ -24,7 +24,12 @@ import {
   DialogActions,
   Stack,
   Avatar,
-  Divider
+  Divider,
+  FormControl,
+  InputLabel,
+  Select,
+  MenuItem,
+  Chip
 } from '@mui/material'
 import {
   PlaylistPlay,
@@ -34,7 +39,8 @@ import {
   PlayArrow,
   MusicNote,
   Timer,
-  DeleteOutline
+  DeleteOutline,
+  AutoAwesome
 } from '@mui/icons-material'
 import { usePlayerStore, Song } from '../store/playerStore'
 
@@ -51,10 +57,29 @@ export default function Playlists() {
   
   const [createOpen, setCreateOpen] = useState(false)
   const [newPlaylistName, setNewPlaylistName] = useState('')
+
+  // Smart Playlist details
+  const [smartOpen, setSmartOpen] = useState(false)
+  const [smartName, setSmartName] = useState('')
+  const [smartField, setSmartField] = useState('artist')
+  const [smartValue, setSmartValue] = useState('')
   
   const setCurrentSong = usePlayerStore((state) => state.setCurrentSong)
   const setQueue = usePlayerStore((state) => state.setQueue)
   const currentSong = usePlayerStore((state) => state.currentSong)
+
+  const getDisplayName = (name: string) => {
+    if (name.startsWith('smart:rule:')) {
+      const parts = name.split(':')
+      return parts[3] || 'Smart Playlist'
+    }
+    return name
+  }
+
+  const checkIsSmart = (playlist: Playlist | null) => {
+    if (!playlist) return false
+    return playlist.name.startsWith('smart:rule:')
+  }
 
   const loadPlaylists = async () => {
     try {
@@ -99,6 +124,21 @@ export default function Playlists() {
       setSelectedPlaylist(created)
     } catch (err) {
       console.error('Failed to create playlist:', err)
+    }
+  }
+
+  const handleCreateSmartPlaylist = async () => {
+    if (!smartName.trim() || !smartValue.trim()) return
+    try {
+      const rules = JSON.stringify({ field: smartField, value: smartValue.trim() })
+      const created = await window.electron.createSmartPlaylist(smartName.trim(), rules)
+      setSmartName('')
+      setSmartValue('')
+      setSmartOpen(false)
+      loadPlaylists()
+      setSelectedPlaylist(created)
+    } catch (err) {
+      console.error('Failed to create smart playlist:', err)
     }
   }
 
@@ -150,15 +190,22 @@ export default function Playlists() {
     return `${minutes}:${seconds < 10 ? '0' : ''}${seconds}`
   }
 
+  const selectedIsSmart = checkIsSmart(selectedPlaylist)
+
   return (
     <Box sx={{ p: 4, height: 'calc(100vh - 90px)', display: 'flex', flexDirection: 'column' }}>
       <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 4 }}>
         <Typography variant="h4" sx={{ fontWeight: 700 }}>
           Playlists
         </Typography>
-        <Button variant="contained" startIcon={<Add />} onClick={() => setCreateOpen(true)}>
-          Create Playlist
-        </Button>
+        <Stack direction="row" spacing={2}>
+          <Button variant="outlined" color="secondary" startIcon={<AutoAwesome />} onClick={() => setSmartOpen(true)}>
+            New Smart Playlist
+          </Button>
+          <Button variant="contained" startIcon={<Add />} onClick={() => setCreateOpen(true)}>
+            Create Playlist
+          </Button>
+        </Stack>
       </Box>
 
       <Grid container spacing={4} sx={{ flex: 1, minHeight: 0 }}>
@@ -168,13 +215,14 @@ export default function Playlists() {
             {playlists.length === 0 ? (
               <Box sx={{ p: 3, textAlign: 'center' }}>
                 <Typography variant="body2" color="text.secondary">
-                  No playlists yet. Click "Create Playlist" to add one!
+                  No playlists yet. Click "Create Playlist" or "New Smart Playlist" to add one!
                 </Typography>
               </Box>
             ) : (
               <List disablePadding>
                 {playlists.map((playlist) => {
                   const isSelected = selectedPlaylist?.id === playlist.id
+                  const isSmart = checkIsSmart(playlist)
                   return (
                     <ListItem
                       key={playlist.id}
@@ -198,10 +246,14 @@ export default function Playlists() {
                         }}
                       >
                         <ListItemIcon sx={{ minWidth: 32 }}>
-                          <PlaylistPlay color={isSelected ? 'primary' : 'inherit'} />
+                          {isSmart ? (
+                            <AutoAwesome color={isSelected ? 'secondary' : 'inherit'} sx={{ fontSize: 20 }} />
+                          ) : (
+                            <PlaylistPlay color={isSelected ? 'primary' : 'inherit'} />
+                          )}
                         </ListItemIcon>
                         <ListItemText
-                          primary={playlist.name}
+                          primary={getDisplayName(playlist.name)}
                           primaryTypographyProps={{
                             fontWeight: isSelected ? 600 : 500,
                             noWrap: true
@@ -231,9 +283,14 @@ export default function Playlists() {
             >
               <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
                 <Box>
-                  <Typography variant="h5" sx={{ fontWeight: 700 }}>
-                    {selectedPlaylist.name}
-                  </Typography>
+                  <Stack direction="row" spacing={1.5} alignItems="center">
+                    <Typography variant="h5" sx={{ fontWeight: 700 }}>
+                      {getDisplayName(selectedPlaylist.name)}
+                    </Typography>
+                    {selectedIsSmart && (
+                      <Chip label="Smart" size="small" color="secondary" icon={<AutoAwesome sx={{ fontSize: 14 }} />} />
+                    )}
+                  </Stack>
                   <Typography variant="caption" color="text.secondary">
                     {playlistTracks.length} Songs • Created {new Date(selectedPlaylist.createdAt).toLocaleDateString()}
                   </Typography>
@@ -254,10 +311,12 @@ export default function Playlists() {
                 <Box sx={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column' }}>
                   <MusicNote sx={{ fontSize: 48, color: 'text.secondary', mb: 2 }} />
                   <Typography variant="body1" color="text.secondary">
-                    This playlist is empty.
+                    {selectedIsSmart ? 'No songs match this smart filter.' : 'This playlist is empty.'}
                   </Typography>
                   <Typography variant="caption" color="text.secondary" sx={{ mt: 1 }}>
-                    Go to the Library tab, right click any song, and add it here!
+                    {selectedIsSmart
+                      ? 'Add songs matching this filter in your library.'
+                      : 'Go to the Library tab, right click any song, and add it here!'}
                   </Typography>
                 </Box>
               ) : (
@@ -273,7 +332,7 @@ export default function Playlists() {
                         <TableCell align="right" width={90}>
                           <Timer fontSize="small" sx={{ mr: 1, verticalAlign: 'middle' }} />
                         </TableCell>
-                        <TableCell width={50}></TableCell>
+                        {!selectedIsSmart && <TableCell width={50}></TableCell>}
                       </TableRow>
                     </TableHead>
                     <TableBody>
@@ -309,16 +368,18 @@ export default function Playlists() {
                             <TableCell sx={{ fontWeight: 600, color: isCurrent ? 'primary.main' : 'text.primary' }}>
                               {song.title}
                             </TableCell>
-                            <TableCell color="text.secondary">{song.artist || 'Unknown Artist'}</TableCell>
-                            <TableCell color="text.secondary">{song.album || 'Unknown Album'}</TableCell>
-                            <TableCell align="right" color="text.secondary">
+                            <TableCell>{song.artist || 'Unknown Artist'}</TableCell>
+                            <TableCell>{song.album || 'Unknown Album'}</TableCell>
+                            <TableCell align="right">
                               {formatDuration(song.duration)}
                             </TableCell>
-                            <TableCell onClick={(e) => handleRemoveSong(song.id, e)}>
-                              <TooltipIconButton title="Remove from playlist">
-                                <Delete sx={{ fontSize: 16 }} />
-                              </TooltipIconButton>
-                            </TableCell>
+                            {!selectedIsSmart && (
+                              <TableCell onClick={(e) => handleRemoveSong(song.id, e)}>
+                                <IconButton size="small">
+                                  <Delete sx={{ fontSize: 16 }} />
+                                </IconButton>
+                              </TableCell>
+                            )}
                           </TableRow>
                         )
                       })}
@@ -368,14 +429,53 @@ export default function Playlists() {
           </Button>
         </DialogActions>
       </Dialog>
-    </Box>
-  )
-}
 
-function TooltipIconButton({ title, children }: { title: string; children: React.ReactNode }) {
-  return (
-    <IconButton size="small">
-      {children}
-    </IconButton>
+      {/* Create Smart Playlist Dialog */}
+      <Dialog open={smartOpen} onClose={() => setSmartOpen(false)}>
+        <DialogTitle sx={{ display: 'flex', alignItems: 'center', gap: 1, fontWeight: 700 }}>
+          <AutoAwesome color="secondary" />
+          Create Smart Playlist
+        </DialogTitle>
+        <DialogContent sx={{ minWidth: 350, pt: 1 }}>
+          <Stack spacing={2} sx={{ mt: 1 }}>
+            <TextField
+              label="Playlist Name"
+              fullWidth
+              variant="outlined"
+              size="small"
+              value={smartName}
+              onChange={(e) => setSmartName(e.target.value)}
+            />
+            
+            <FormControl size="small" fullWidth>
+              <InputLabel>Filter Field</InputLabel>
+              <Select value={smartField} label="Filter Field" onChange={(e) => setSmartField(e.target.value)}>
+                <MenuItem value="artist">Artist Includes</MenuItem>
+                <MenuItem value="genre">Genre Includes</MenuItem>
+                <MenuItem value="year">Year Equals</MenuItem>
+              </Select>
+            </FormControl>
+
+            <TextField
+              label="Filter Value"
+              fullWidth
+              variant="outlined"
+              size="small"
+              placeholder="e.g. Lofi, Rock, 2020"
+              value={smartValue}
+              onChange={(e) => setSmartValue(e.target.value)}
+            />
+          </Stack>
+        </DialogContent>
+        <DialogActions sx={{ p: 2 }}>
+          <Button onClick={() => setSmartOpen(false)} color="inherit">
+            Cancel
+          </Button>
+          <Button onClick={handleCreateSmartPlaylist} color="secondary" variant="contained">
+            Create Smart Playlist
+          </Button>
+        </DialogActions>
+      </Dialog>
+    </Box>
   )
 }

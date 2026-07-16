@@ -1,4 +1,4 @@
-import React from 'react'
+import React, { useEffect, useState, useMemo } from 'react'
 import {
   Box,
   Grid,
@@ -12,30 +12,47 @@ import {
   ListItemText,
   ListItemAvatar,
   Avatar,
-  ListItemButton
+  ListItemButton,
+  Stack,
+  LinearProgress
 } from '@mui/material'
 import {
   MusicNote,
   People,
   Album,
   FolderCopy,
-  QueueMusic
+  QueueMusic,
+  AccessTime,
+  BarChart,
+  HardDrive
 } from '@mui/icons-material'
 import { useLibraryStore } from '../store/libraryStore'
 import { usePlayerStore, Song } from '../store/playerStore'
+
+interface Analytics {
+  totalSongs: number
+  totalDuration: number
+  totalSize: number
+  formats: Record<string, number>
+  genres: Record<string, number>
+  artists: number
+}
 
 export default function Dashboard() {
   const songs = useLibraryStore((state) => state.songs)
   const setCurrentSong = usePlayerStore((state) => state.setCurrentSong)
   const setQueue = usePlayerStore((state) => state.setQueue)
+  
+  const [analytics, setAnalytics] = useState<Analytics | null>(null)
 
-  // Calculate stats
-  const totalSongs = songs.length
-  const uniqueArtists = new Set(songs.map((s) => s.artist).filter(Boolean)).size
-  const uniqueAlbums = new Set(songs.map((s) => s.album).filter(Boolean)).size
+  useEffect(() => {
+    window.electron.getLibraryAnalytics().then((res) => {
+      setAnalytics(res)
+    }).catch(console.error)
+  }, [songs])
 
   // Recent songs (latest added)
-  const recentSongs = React.useMemo(() => {
+  const recentSongs = useMemo(() => {
     return [...songs].slice(-5).reverse()
   }, [songs])
 
@@ -44,21 +61,58 @@ export default function Dashboard() {
     setCurrentSong(song)
   }
 
+  const formatDuration = (secs: number) => {
+    const hours = Math.floor(secs / 3600)
+    const minutes = Math.floor((secs % 3600) / 60)
+    if (hours > 0) {
+      return `${hours}h ${minutes}m`
+    }
+    return `${minutes} mins`
+  }
+
+  const formatSize = (mb: number) => {
+    if (mb > 1024) {
+      return `${(mb / 1024).toFixed(1)} GB`
+    }
+    return `${mb.toFixed(0)} MB`
+  }
+
   const statCards = [
-    { title: 'Total Songs', value: totalSongs, icon: <MusicNote sx={{ fontSize: 32 }} />, color: '#2196f3' },
-    { title: 'Artists', value: uniqueArtists, icon: <People sx={{ fontSize: 32 }} />, color: '#9c27b0' },
-    { title: 'Albums', value: uniqueAlbums, icon: <Album sx={{ fontSize: 32 }} />, color: '#4caf50' }
+    {
+      title: 'Total Songs',
+      value: songs.length,
+      icon: <MusicNote sx={{ fontSize: 32 }} />,
+      color: '#2196f3'
+    },
+    {
+      title: 'Artists',
+      value: analytics?.artists || 0,
+      icon: <People sx={{ fontSize: 32 }} />,
+      color: '#9c27b0'
+    },
+    {
+      title: 'Library Size',
+      value: formatSize(analytics?.totalSize || 0),
+      icon: <FolderCopy sx={{ fontSize: 32 }} />,
+      color: '#4caf50'
+    },
+    {
+      title: 'Total Time',
+      value: formatDuration(analytics?.totalDuration || 0),
+      icon: <AccessTime sx={{ fontSize: 32 }} />,
+      color: '#ff9800'
+    }
   ]
 
   return (
-    <Box sx={{ p: 4 }}>
+    <Box sx={{ p: 4, height: 'calc(100vh - 90px)', overflowY: 'auto' }}>
       <Typography variant="h4" sx={{ fontWeight: 700, mb: 4 }}>
         Dashboard
       </Typography>
 
       <Grid container spacing={3} sx={{ mb: 4 }}>
         {statCards.map((card, idx) => (
-          <Grid item xs={12} sm={4} key={idx}>
+          <Grid item xs={12} sm={6} md={3} key={idx}>
             <Card sx={{ display: 'flex', alignItems: 'center', p: 1 }}>
               <Box
                 sx={{
@@ -89,14 +143,15 @@ export default function Dashboard() {
       </Grid>
 
       <Grid container spacing={4}>
+        {/* Recently Added */}
         <Grid item xs={12} md={6}>
-          <Paper sx={{ p: 3, border: '1px solid #27272a' }}>
+          <Paper sx={{ p: 3, border: '1px solid #27272a', minHeight: 320 }}>
             <Typography variant="h6" sx={{ fontWeight: 600, mb: 2 }}>
               Recently Added
             </Typography>
             <Divider sx={{ mb: 2 }} />
             {recentSongs.length === 0 ? (
-              <Typography variant="body2" color="text.secondary" sx={{ py: 4, textAlign: 'center' }}>
+              <Typography variant="body2" color="text.secondary" sx={{ py: 6, textAlign: 'center' }}>
                 No songs in the library. Go to Folder Scanner to add music!
               </Typography>
             ) : (
@@ -131,23 +186,44 @@ export default function Dashboard() {
           </Paper>
         </Grid>
 
+        {/* Library Format & Analytics breakdown */}
         <Grid item xs={12} md={6}>
-          <Paper sx={{ p: 3, border: '1px solid #27272a' }}>
-            <Typography variant="h6" sx={{ fontWeight: 600, mb: 2 }}>
-              System Status
+          <Paper sx={{ p: 3, border: '1px solid #27272a', minHeight: 320 }}>
+            <Typography variant="h6" sx={{ fontWeight: 600, mb: 2, display: 'flex', alignItems: 'center', gap: 1 }}>
+              <BarChart />
+              Format Analytics
             </Typography>
             <Divider sx={{ mb: 2 }} />
-            <List>
-              <ListItem>
-                <ListItemText primary="Environment" secondary="Development Mode (Electron + Vite)" />
-              </ListItem>
-              <ListItem>
-                <ListItemText primary="Database" secondary="Local SQLite (WAL Mode)" />
-              </ListItem>
-              <ListItem>
-                <ListItemText primary="Audio Support" secondary="MP3, FLAC, M4A, WAV, AAC, ALAC" />
-              </ListItem>
-            </List>
+            
+            {analytics && Object.keys(analytics.formats).length > 0 ? (
+              <Stack spacing={3} sx={{ py: 1 }}>
+                {Object.entries(analytics.formats).map(([format, count]) => {
+                  const percent = Math.round((count / songs.length) * 100)
+                  return (
+                    <Box key={format}>
+                      <Stack direction="row" justifyContent="space-between" sx={{ mb: 0.5 }}>
+                        <Typography variant="subtitle2" sx={{ textTransform: 'uppercase', fontWeight: 600 }}>
+                          {format}
+                        </Typography>
+                        <Typography variant="caption" color="text.secondary">
+                          {count} tracks ({percent}%)
+                        </Typography>
+                      </Stack>
+                      <LinearProgress
+                        variant="determinate"
+                        value={percent}
+                        color={format === 'flac' || format === 'alac' ? 'success' : 'primary'}
+                        sx={{ height: 6, borderRadius: 3 }}
+                      />
+                    </Box>
+                  )
+                })}
+              </Stack>
+            ) : (
+              <Typography variant="body2" color="text.secondary" sx={{ py: 6, textAlign: 'center' }}>
+                No format data available. Scan your library directory to generate analytics.
+              </Typography>
+            )}
           </Paper>
         </Grid>
       </Grid>
