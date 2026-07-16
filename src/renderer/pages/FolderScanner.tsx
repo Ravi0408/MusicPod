@@ -33,13 +33,19 @@ export default function FolderScanner() {
   useEffect(() => {
     const unsubscribe = window.electron.onScanProgress((progress) => {
       setScanProgress(progress)
-      if (progress.status === 'done' || progress.status === 'error') {
+      if (progress.status === 'done') {
         setIsScanning(false)
-        fetchSongs() // Refetch library after scan finishes
+        fetchSongs()
+        if (scanFolder) {
+          window.electron.startWatchingFolder(scanFolder).catch(console.error)
+        }
+      } else if (progress.status === 'error') {
+        setIsScanning(false)
+        fetchSongs()
       }
     })
     return () => unsubscribe()
-  }, [])
+  }, [scanFolder])
 
   const handleSelectFolder = async () => {
     try {

@@ -4,6 +4,10 @@ import { LibraryService } from '../services/libraryService'
 import { MetadataService } from '../services/metadataService'
 import { ArtworkService } from '../services/artworkService'
 import { PlaylistService } from '../services/playlistService'
+import { ConverterService } from '../services/converterService'
+import { DuplicateService } from '../services/duplicateService'
+import { ScannerService } from '../services/scannerService'
+import { DownloadService, SearchResult } from '../services/downloadService'
 
 // Input validation schemas
 const scanLibrarySchema = z.string().min(1)
@@ -33,7 +37,31 @@ const playlistSongSchema = z.object({
   songId: z.string().min(1)
 })
 
+// Phase 3 Schemas
+const convertFileSchema = z.object({
+  filePath: z.string().min(1),
+  outputFormat: z.string().min(1),
+  preset: z.string().min(1)
+})
+
+const findDuplicatesSchema = z.enum(['hash', 'metadata'])
+const trashSongSchema = z.string().min(1)
+const watchFolderSchema = z.string().min(1)
+const searchDownloadsSchema = z.string()
+const addDownloadSchema = z.object({
+  trackId: z.string().min(1),
+  title: z.string().min(1),
+  artist: z.string(),
+  album: z.string(),
+  duration: z.number(),
+  provider: z.string()
+})
+const downloadIdSchema = z.string().min(1)
+
 export function registerIpcHandlers(mainWindow: BrowserWindow) {
+  // Initialize Download Service with main window
+  DownloadService.init(mainWindow)
+
   // Common ping-pong
   ipcMain.handle('ping', () => 'pong')
 
@@ -60,7 +88,6 @@ export function registerIpcHandlers(mainWindow: BrowserWindow) {
   // Metadata Updates
   ipcMain.handle('update-song-metadata', async (_event, payload: unknown) => {
     const { songId, tags } = updateMetadataSchema.parse(payload)
-    // Convert null/undefined to clean tags object
     const cleanTags = {
       title: tags.title,
       artist: tags.artist || undefined,
@@ -120,8 +147,6 @@ export function registerIpcHandlers(mainWindow: BrowserWindow) {
   // Playlist M3U export
   ipcMain.handle('export-playlist-m3u', async (_event, playlistId: unknown) => {
     const parsedId = playlistIdSchema.parse(playlistId)
-    
-    // Open Save dialog to select target M3U file
     const result = await dialog.showSaveDialog(mainWindow, {
       title: 'Export Playlist to M3U',
       defaultPath: 'playlist.m3u',
@@ -132,5 +157,65 @@ export function registerIpcHandlers(mainWindow: BrowserWindow) {
 
     await PlaylistService.exportPlaylistM3U(parsedId, result.filePath)
     return true
+  })
+
+  // --- Phase 3 Handlers ---
+
+  // Audio Converter
+  ipcMain.handle('convert-file', async (_event, payload: unknown) => {
+    const { filePath, outputFormat, preset } = convertFileSchema.parse(payload)
+    return ConverterService.convert(filePath, outputFormat, preset, mainWindow)
+  })
+
+  // Duplicate Finder
+  ipcMain.handle('find-duplicates', async (_event, method: unknown) => {
+    const parsedMethod = findDuplicatesSchema.parse(method)
+    return DuplicateService.findDuplicates(parsedMethod)
+  })
+
+  ipcMain.handle('trash-song', async (_event, songId: unknown) => {
+    const parsedId = trashSongSchema.parse(songId)
+    await DuplicateService.trashSong(parsedId)
+  })
+
+  // Folder Watcher
+  ipcMain.handle('start-watching-folder', async (_event, folderPath: unknown) => {
+    const parsedPath = watchFolderSchema.parse(folderPath)
+    ScannerService.startWatching(parsedPath, mainWindow)
+  })
+
+  ipcMain.handle('stop-watching-folder', async (_event, folderPath: unknown) => {
+    const parsedPath = watchFolderSchema.parse(folderPath)
+    ScannerService.stopWatching(parsedPath)
+  })
+
+  // Download Manager
+  ipcMain.handle('search-downloads', async (_event, query: unknown) => {
+    const parsedQuery = searchDownloadsSchema.parse(query)
+    return DownloadService.searchMock(parsedQuery)
+  })
+
+  ipcMain.handle('add-to-download-queue', async (_event, payload: unknown) => {
+    const parsedTrack = addDownloadSchema.parse(payload) as SearchResult
+    return DownloadService.addToQueue(parsedTrack)
+  })
+
+  ipcMain.handle('get-download-queue', async () => {
+    return DownloadService.getQueue()
+  })
+
+  ipcMain.handle('pause-download', async (_event, id: unknown) => {
+    const parsedId = downloadIdSchema.parse(id)
+    DownloadService.pauseDownload(parsedId)
+  })
+
+  ipcMain.handle('resume-download', async (_event, id: unknown) => {
+    const parsedId = downloadIdSchema.parse(id)
+    DownloadService.resumeDownload(parsedId)
+  })
+
+  ipcMain.handle('cancel-download', async (_event, id: unknown) => {
+    const parsedId = downloadIdSchema.parse(id)
+    DownloadService.cancelDownload(parsedId)
   })
 }

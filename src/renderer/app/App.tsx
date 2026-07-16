@@ -14,17 +14,31 @@ import {
   MusicNote,
   FolderSpecial,
   Settings as SettingsIcon,
-  PlaylistPlay
+  PlaylistPlay,
+  Transform,
+  FilterNone,
+  CloudDownload
 } from '@mui/icons-material'
 import Dashboard from '../pages/Dashboard'
 import Library from '../pages/Library'
 import FolderScanner from '../pages/FolderScanner'
 import Settings from '../pages/Settings'
 import Playlists from '../pages/Playlists'
+import Converter from '../pages/Converter'
+import Duplicates from '../pages/Duplicates'
+import Downloads from '../pages/Downloads'
 import Player from '../components/Player'
 import { useLibraryStore } from '../store/libraryStore'
 
-type View = 'dashboard' | 'library' | 'playlists' | 'scanner' | 'settings'
+type View =
+  | 'dashboard'
+  | 'library'
+  | 'playlists'
+  | 'converter'
+  | 'duplicates'
+  | 'downloads'
+  | 'scanner'
+  | 'settings'
 
 export default function App() {
   const [currentView, setCurrentView] = useState<View>('dashboard')
@@ -35,10 +49,21 @@ export default function App() {
     fetchSongs()
   }, [])
 
+  // Listen to background library scanner modifications (chokidar watcher event)
+  useEffect(() => {
+    const unsubscribe = window.electron.onLibraryUpdated(() => {
+      fetchSongs()
+    })
+    return () => unsubscribe()
+  }, [])
+
   const navigationItems = [
     { id: 'dashboard', text: 'Dashboard', icon: <DashboardIcon /> },
     { id: 'library', text: 'Library', icon: <MusicNote /> },
     { id: 'playlists', text: 'Playlists', icon: <PlaylistPlay /> },
+    { id: 'converter', text: 'Converter', icon: <Transform /> },
+    { id: 'duplicates', text: 'Duplicates', icon: <FilterNone /> },
+    { id: 'downloads', text: 'Downloads', icon: <CloudDownload /> },
     { id: 'scanner', text: 'Folder Scanner', icon: <FolderSpecial /> },
     { id: 'settings', text: 'Settings', icon: <SettingsIcon /> }
   ]
@@ -51,6 +76,12 @@ export default function App() {
         return <Library />
       case 'playlists':
         return <Playlists />
+      case 'converter':
+        return <Converter />
+      case 'duplicates':
+        return <Duplicates />
+      case 'downloads':
+        return <Downloads />
       case 'scanner':
         return <FolderScanner />
       case 'settings':
