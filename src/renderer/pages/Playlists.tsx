@@ -69,16 +69,16 @@ export default function Playlists() {
   const currentSong = usePlayerStore((state) => state.currentSong)
 
   const getDisplayName = (name: string) => {
-    if (name.startsWith('smart:rule:')) {
-      const parts = name.split(':')
-      return parts[3] || 'Smart Playlist'
+    if (name.startsWith('smart:rule')) {
+      const parts = name.split('||')
+      return parts[2] || 'Smart Playlist'
     }
     return name
   }
 
   const checkIsSmart = (playlist: Playlist | null) => {
     if (!playlist) return false
-    return playlist.name.startsWith('smart:rule:')
+    return playlist.name.startsWith('smart:rule')
   }
 
   const loadPlaylists = async () => {

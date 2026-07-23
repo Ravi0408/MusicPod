@@ -17,17 +17,36 @@ export const songs = sqliteTable('songs', {
   sampleRate: integer('sample_rate'),
   channels: integer('channels'),
   codec: text('codec'),
-  filePath: text('file_path').notNull().unique(),
+  filePath: text('file_path'), // Nullable now for catalog-only songs
   coverPath: text('cover_path'),
   createdAt: text('created_at').notNull(),
-  updatedAt: text('updated_at').notNull()
+  updatedAt: text('updated_at').notNull(),
+
+  // Catalog additions
+  movie: text('movie'),
+  decade: text('decade'),
+  artistsJson: text('artists_json'),       // JSON array of strings
+  composersJson: text('composers_json'),   // JSON array of strings
+  lyricistsJson: text('lyricists_json'),   // JSON array of strings
+  genresJson: text('genres_json'),         // JSON array of strings
+  moodsJson: text('moods_json'),           // JSON array of strings
+  popularity: integer('popularity').default(0),
+  tagsJson: text('tags_json'),             // JSON array of strings
+  searchKeywordsJson: text('search_keywords_json'), // JSON array of strings
+  youtubeQuery: text('youtube_query'),
+  downloaded: integer('downloaded').default(0), // 0 or 1
+  favorite: integer('favorite').default(0),     // 0 or 1
+  playCount: integer('play_count').default(0),
+  lastPlayed: text('last_played')               // ISO string
 })
 
 export const artists = sqliteTable('artists', {
   id: text('id').primaryKey(),
   name: text('name').notNull().unique(),
   image: text('image'),
-  bio: text('bio')
+  bio: text('bio'),
+  popularity: integer('popularity').default(0),
+  favorite: integer('favorite').default(0)
 })
 
 export const albums = sqliteTable('albums', {
@@ -35,7 +54,18 @@ export const albums = sqliteTable('albums', {
   title: text('title').notNull(),
   artist: text('artist'),
   year: integer('year'),
-  cover: text('cover')
+  cover: text('cover'),
+  favorite: integer('favorite').default(0)
+})
+
+export const movies = sqliteTable('movies', {
+  id: text('id').primaryKey(),
+  title: text('title').notNull().unique(),
+  year: integer('year'),
+  director: text('director'),
+  castJson: text('cast_json'),   // JSON array of strings
+  poster: text('poster'),
+  favorite: integer('favorite').default(0)
 })
 
 export const downloads = sqliteTable('downloads', {

@@ -49,6 +49,37 @@ export class LibraryService {
       }
     }
 
+    const nowStr = new Date().toISOString()
+
+    // 13. Automatic Metadata Matching: Match incoming file to catalog song if downloaded = 0
+    const catalogMatch = db.select()
+      .from(songs)
+      .where(like(songs.title, `%${title}%`))
+      .all()
+      .find((s) => {
+        if (s.downloaded === 1) return false
+        const artistMatch = s.artist && artistName && (s.artist.toLowerCase().includes(artistName.toLowerCase()) || artistName.toLowerCase().includes(s.artist.toLowerCase()))
+        const movieMatch = s.movie && albumTitle && (s.movie.toLowerCase().includes(albumTitle.toLowerCase()) || albumTitle.toLowerCase().includes(s.movie.toLowerCase()))
+        return !!(artistMatch || movieMatch)
+      })
+
+    if (catalogMatch) {
+      console.log(`Matched incoming file "${title}" to verified catalog record: "${catalogMatch.title}"`)
+      await db.update(songs).set({
+        filePath,
+        coverPath: coverPath || catalogMatch.coverPath,
+        downloaded: 1,
+        duration: duration || catalogMatch.duration,
+        bitrate,
+        sampleRate,
+        channels,
+        codec,
+        updatedAt: nowStr
+      }).where(eq(songs.id, catalogMatch.id))
+
+      return catalogMatch.id
+    }
+
     const songId = crypto.createHash('md5').update(filePath).digest('hex')
     const artistId = crypto.createHash('md5').update(artistName).digest('hex')
     const albumId = crypto.createHash('md5').update(albumTitle + artistName).digest('hex')
@@ -69,7 +100,6 @@ export class LibraryService {
     }).onConflictDoNothing()
 
     // Upsert Song
-    const nowStr = new Date().toISOString()
     await db.insert(songs).values({
       id: songId,
       title,

@@ -1,4 +1,4 @@
-import { ipcMain, dialog, BrowserWindow } from 'electron'
+import { ipcMain, dialog, BrowserWindow, shell } from 'electron'
 import { z } from 'zod'
 import { LibraryService } from '../services/libraryService'
 import { MetadataService } from '../services/metadataService'
@@ -12,8 +12,11 @@ import { DeviceService } from '../services/deviceService'
 import { PluginService } from '../services/pluginService'
 import { AiService } from '../services/aiService'
 import { getDb } from '../database/db'
-import { songs as songsTable, playlists } from '../database/schema'
-import { eq } from 'drizzle-orm'
+import { songs as songsTable, playlists, movies, artists } from '../database/schema'
+import { eq, and, desc, inArray } from 'drizzle-orm'
+import { SearchService } from '../services/searchService'
+import { CatalogImporter } from '../services/catalogImporter'
+import { generatePerformanceTestData } from '../database/seedCatalog'
 import crypto from 'crypto'
 
 // ─── Separator used to encode smart playlist header ───────────────────────────
@@ -103,6 +106,35 @@ const aiCleanupSuggestSchema = z.string().min(1)
 const createSmartPlaylistSchema = z.object({
   name: z.string().min(1),
   rules: z.string().min(1) // JSON formatted string representing filters
+})
+
+const searchCatalogSchema = z.object({
+  query: z.string(),
+  filters: z.object({
+    year: z.string().optional(),
+    decade: z.string().optional(),
+    movie: z.string().optional(),
+    artist: z.string().optional(),
+    composer: z.string().optional(),
+    lyricist: z.string().optional(),
+    genre: z.string().optional(),
+    mood: z.string().optional(),
+    downloaded: z.boolean().optional(),
+    favorite: z.boolean().optional()
+  }),
+  sorting: z.string(),
+  limit: z.number().int().nonnegative().optional(),
+  offset: z.number().int().nonnegative().optional()
+})
+
+const importCatalogSchema = z.object({
+  filePath: z.string().min(1),
+  format: z.enum(['json', 'csv'])
+})
+
+const toggleFavoriteSchema = z.object({
+  id: z.string().min(1),
+  isFav: z.boolean()
 })
 
 export function registerIpcHandlers(mainWindow: BrowserWindow) {
@@ -417,5 +449,115 @@ export function registerIpcHandlers(mainWindow: BrowserWindow) {
       genres,
       artists: Object.keys(artistsCount).length
     }
+  })
+
+  // --- Bollywood Catalog Handlers ---
+
+  ipcMain.handle('search-catalog-songs', async (_event, payload: unknown) => {
+    const { query, filters, sorting, limit, offset } = searchCatalogSchema.parse(payload)
+    return SearchService.searchSongs(query, filters, sorting, limit, offset)
+  })
+
+  ipcMain.handle('import-catalog', async (_event, payload: unknown) => {
+    const { filePath, format } = importCatalogSchema.parse(payload)
+    if (format === 'json') {
+      return CatalogImporter.importFromJson(filePath)
+    } else {
+      return CatalogImporter.importFromCsv(filePath)
+    }
+  })
+
+  ipcMain.handle('generate-perf-catalog', async (_event, count: unknown) => {
+    const parsedCount = z.number().int().positive().parse(count)
+    await generatePerformanceTestData(parsedCount)
+  })
+
+  ipcMain.handle('get-movie-details', async (_event, title: unknown) => {
+    const parsedTitle = z.string().min(1).parse(title)
+    const db = getDb()
+    const movie = db.select().from(movies).where(eq(movies.title, parsedTitle)).get()
+    if (!movie) return null
+    // Fetch songs for this movie
+    const movieSongs = db.select().from(songsTable).where(eq(songsTable.movie, parsedTitle)).all()
+    return { ...movie, songs: movieSongs }
+  })
+
+  ipcMain.handle('get-artist-details', async (_event, name: unknown) => {
+    const parsedName = z.string().min(1).parse(name)
+    const db = getDb()
+    const artist = db.select().from(artists).where(eq(artists.name, parsedName)).get()
+    
+    // Fetch songs where this artist is featured
+    const artistSongs = db.select()
+      .from(songsTable)
+      .where(eq(songsTable.artist, parsedName))
+      .all()
+    
+    const uniqueMovies = Array.from(new Set(artistSongs.map((s) => s.movie).filter(Boolean)))
+
+    return { 
+      artist: artist || { id: crypto.createHash('md5').update(parsedName).digest('hex'), name: parsedName, bio: 'Playback singer in Bollywood movies.', image: '' }, 
+      songs: artistSongs,
+      movies: uniqueMovies
+    }
+  })
+
+  ipcMain.handle('toggle-favorite-song', async (_event, payload: unknown) => {
+    const { id, isFav } = toggleFavoriteSchema.parse(payload)
+    const db = getDb()
+    await db.update(songsTable).set({ favorite: isFav ? 1 : 0 }).where(eq(songsTable.id, id))
+  })
+
+  ipcMain.handle('toggle-favorite-artist', async (_event, payload: unknown) => {
+    const { id, isFav } = toggleFavoriteSchema.parse(payload)
+    const db = getDb()
+    await db.update(artists).set({ favorite: isFav ? 1 : 0 }).where(eq(artists.id, id))
+  })
+
+  ipcMain.handle('toggle-favorite-movie', async (_event, payload: unknown) => {
+    const { id, isFav } = toggleFavoriteSchema.parse(payload)
+    const db = getDb()
+    await db.update(movies).set({ favorite: isFav ? 1 : 0 }).where(eq(movies.id, id))
+  })
+
+  // Listening History & Recommendation Engine
+  ipcMain.handle('increment-play-count', async (_event, songId: unknown) => {
+    const parsedId = z.string().min(1).parse(songId)
+    const db = getDb()
+    const song = db.select().from(songsTable).where(eq(songsTable.id, parsedId)).get()
+    if (song) {
+      await db.update(songsTable).set({
+        playCount: (song.playCount ?? 0) + 1,
+        lastPlayed: new Date().toISOString()
+      }).where(eq(songsTable.id, parsedId))
+    }
+  })
+
+  ipcMain.handle('get-recommendations', async () => {
+    const db = getDb()
+    const favSongs = db.select().from(songsTable).where(eq(songsTable.favorite, 1)).all()
+    
+    // Fallback: If no favorites, recommend top popular tracks
+    if (favSongs.length === 0) {
+      return db.select().from(songsTable).orderBy(desc(songsTable.popularity)).limit(10).all()
+    }
+
+    const matchedGenres = new Set(favSongs.map((s) => s.genre).filter(Boolean))
+    const matchedArtists = new Set(favSongs.map((s) => s.artist).filter(Boolean))
+
+    const pool = db.select().from(songsTable).where(eq(songsTable.favorite, 0)).limit(100).all()
+    const recommended = pool.filter((s) => matchedGenres.has(s.genre) || matchedArtists.has(s.artist)).slice(0, 10)
+
+    if (recommended.length < 5) {
+      const popular = db.select().from(songsTable).orderBy(desc(songsTable.popularity)).limit(10).all()
+      return Array.from(new Set([...recommended, ...popular])).slice(0, 10)
+    }
+
+    return recommended
+  })
+
+  ipcMain.handle('reveal-file', async (_event, filePath: unknown) => {
+    const parsedPath = z.string().parse(filePath)
+    shell.showItemInFolder(parsedPath)
   })
 }

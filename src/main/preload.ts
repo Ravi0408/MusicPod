@@ -109,6 +109,8 @@ const electronAPI = {
       ipcRenderer.removeListener('download-queue-updated', subscription)
     }
   },
+  revealFile: (filePath: string): Promise<void> =>
+    ipcRenderer.invoke('reveal-file', filePath),
 
   // --- Phase 4 APIs ---
 
@@ -140,7 +142,35 @@ const electronAPI = {
   aiCleanupSuggest: (songId: string): Promise<any> => ipcRenderer.invoke('ai-cleanup-suggest', songId),
   createSmartPlaylist: (name: string, rules: string): Promise<any> =>
     ipcRenderer.invoke('create-smart-playlist', { name, rules }),
-  getLibraryAnalytics: (): Promise<any> => ipcRenderer.invoke('get-library-analytics')
+  getLibraryAnalytics: (): Promise<any> => ipcRenderer.invoke('get-library-analytics'),
+
+  // Catalog & Recommendations
+  searchCatalogSongs: (
+    query: string,
+    filters: any,
+    sorting: string,
+    limit?: number,
+    offset?: number
+  ): Promise<{ songs: any[]; total: number }> =>
+    ipcRenderer.invoke('search-catalog-songs', { query, filters, sorting, limit, offset }),
+  importCatalog: (filePath: string, format: 'json' | 'csv'): Promise<any> =>
+    ipcRenderer.invoke('import-catalog', { filePath, format }),
+  generatePerfCatalog: (count: number): Promise<void> =>
+    ipcRenderer.invoke('generate-perf-catalog', count),
+  getMovieDetails: (title: string): Promise<any> =>
+    ipcRenderer.invoke('get-movie-details', title),
+  getArtistDetails: (name: string): Promise<any> =>
+    ipcRenderer.invoke('get-artist-details', name),
+  toggleFavoriteSong: (id: string, isFav: boolean): Promise<void> =>
+    ipcRenderer.invoke('toggle-favorite-song', { id, isFav }),
+  toggleFavoriteArtist: (id: string, isFav: boolean): Promise<void> =>
+    ipcRenderer.invoke('toggle-favorite-artist', { id, isFav }),
+  toggleFavoriteMovie: (id: string, isFav: boolean): Promise<void> =>
+    ipcRenderer.invoke('toggle-favorite-movie', { id, isFav }),
+  incrementPlayCount: (songId: string): Promise<void> =>
+    ipcRenderer.invoke('increment-play-count', songId),
+  getRecommendations: (): Promise<any[]> =>
+    ipcRenderer.invoke('get-recommendations')
 }
 
 contextBridge.exposeInMainWorld('electron', electronAPI)

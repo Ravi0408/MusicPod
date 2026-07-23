@@ -350,9 +350,9 @@ export default function Library() {
           ) : (
             <List>
               {playlists.map((playlist) => {
-                const parts = playlist.name.split(':')
-                const isSmart = playlist.name.startsWith('smart:rule:')
-                const displayName = isSmart ? parts[3] : playlist.name
+                const parts = playlist.name.split('||')
+                const isSmart = playlist.name.startsWith('smart:rule')
+                const displayName = isSmart ? parts[2] : playlist.name
                 
                 return (
                   <ListItem key={playlist.id} disablePadding>

@@ -14,7 +14,8 @@ import {
   Avatar,
   ListItemButton,
   Stack,
-  LinearProgress
+  LinearProgress,
+  IconButton
 } from '@mui/material'
 import {
   MusicNote,
@@ -24,7 +25,9 @@ import {
   QueueMusic,
   AccessTime,
   BarChart,
-  HardDrive
+  HardDrive,
+  AutoAwesome,
+  PlayArrow
 } from '@mui/icons-material'
 import { useLibraryStore } from '../store/libraryStore'
 import { usePlayerStore, Song } from '../store/playerStore'
@@ -44,10 +47,15 @@ export default function Dashboard() {
   const setQueue = usePlayerStore((state) => state.setQueue)
   
   const [analytics, setAnalytics] = useState<Analytics | null>(null)
+  const [recommendations, setRecommendations] = useState<any[]>([])
 
   useEffect(() => {
     window.electron.getLibraryAnalytics().then((res) => {
       setAnalytics(res)
+    }).catch(console.error)
+
+    window.electron.getRecommendations().then((res) => {
+      setRecommendations(res)
     }).catch(console.error)
   }, [songs])
 
@@ -227,6 +235,48 @@ export default function Dashboard() {
           </Paper>
         </Grid>
       </Grid>
+
+      {/* Personalized Recommendations */}
+      <Paper sx={{ p: 3, mt: 4, border: '1px solid #27272a', backgroundColor: '#18181b', borderRadius: 2 }}>
+        <Typography variant="h6" sx={{ fontWeight: 600, mb: 2, display: 'flex', alignItems: 'center', gap: 1 }}>
+          <AutoAwesome color="primary" />
+          Recommended For You
+        </Typography>
+        <Divider sx={{ mb: 2 }} />
+        {recommendations.length === 0 ? (
+          <Typography variant="body2" color="text.secondary" sx={{ py: 3, textAlign: 'center' }}>
+            No recommendations yet. Start favoriting songs or artists to get personalized recommendations!
+          </Typography>
+        ) : (
+          <Grid container spacing={2}>
+            {recommendations.map((song) => (
+              <Grid item xs={12} sm={6} md={4} key={song.id}>
+                <Card sx={{ border: '1px solid #27272a', display: 'flex', alignItems: 'center', p: 1.5, gap: 2, backgroundColor: 'background.default' }}>
+                  <Avatar variant="rounded" sx={{ backgroundColor: 'primary.main', color: 'primary.contrastText' }}>
+                    <MusicNote />
+                  </Avatar>
+                  <Box sx={{ minWidth: 0, flex: 1 }}>
+                    <Typography variant="subtitle2" noWrap sx={{ fontWeight: 700 }}>
+                      {song.title}
+                    </Typography>
+                    <Typography variant="caption" color="text.secondary" noWrap sx={{ display: 'block' }}>
+                      {song.artist} • {song.movie || song.album}
+                    </Typography>
+                  </Box>
+                  <IconButton
+                    size="small"
+                    color="primary"
+                    onClick={() => handlePlaySong(song)}
+                    disabled={song.downloaded !== 1}
+                  >
+                    <PlayArrow />
+                  </IconButton>
+                </Card>
+              </Grid>
+            ))}
+          </Grid>
+        )}
+      </Paper>
     </Box>
   )
 }

@@ -18,10 +18,12 @@ import {
   Transform,
   FilterNone,
   CloudDownload,
-  Usb
+  Usb,
+  Album
 } from '@mui/icons-material'
 import Dashboard from '../pages/Dashboard'
 import Library from '../pages/Library'
+import Catalog from '../pages/Catalog'
 import FolderScanner from '../pages/FolderScanner'
 import Settings from '../pages/Settings'
 import Playlists from '../pages/Playlists'
@@ -35,6 +37,7 @@ import { useLibraryStore } from '../store/libraryStore'
 type View =
   | 'dashboard'
   | 'library'
+  | 'catalog'
   | 'playlists'
   | 'converter'
   | 'duplicates'
@@ -44,7 +47,7 @@ type View =
   | 'settings'
 
 export default function App() {
-  const [currentView, setCurrentView] = useState<View>('dashboard')
+  const [currentView, setCurrentView] = useState<View>('downloads')
   const fetchSongs = useLibraryStore((state) => state.fetchSongs)
 
   // Fetch songs on startup
@@ -61,12 +64,13 @@ export default function App() {
   }, [])
 
   const navigationItems = [
+    { id: 'downloads', text: 'MP3 Search & Download', icon: <CloudDownload /> },
+    { id: 'library', text: 'My Library & Player', icon: <MusicNote /> },
     { id: 'dashboard', text: 'Dashboard', icon: <DashboardIcon /> },
-    { id: 'library', text: 'Library', icon: <MusicNote /> },
     { id: 'playlists', text: 'Playlists', icon: <PlaylistPlay /> },
+    { id: 'catalog', text: 'Music Catalog', icon: <Album /> },
     { id: 'converter', text: 'Converter', icon: <Transform /> },
     { id: 'duplicates', text: 'Duplicates', icon: <FilterNone /> },
-    { id: 'downloads', text: 'Downloads', icon: <CloudDownload /> },
     { id: 'devices', text: 'Devices', icon: <Usb /> },
     { id: 'scanner', text: 'Folder Scanner', icon: <FolderSpecial /> },
     { id: 'settings', text: 'Settings', icon: <SettingsIcon /> }
@@ -78,6 +82,8 @@ export default function App() {
         return <Dashboard />
       case 'library':
         return <Library />
+      case 'catalog':
+        return <Catalog />
       case 'playlists':
         return <Playlists />
       case 'converter':

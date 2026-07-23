@@ -31,7 +31,7 @@ export class YouTubeProvider {
   static async search(query: string): Promise<YoutubeSearchResult[]> {
     return new Promise((resolve, reject) => {
       const args = [
-        `ytsearch5:${query}`,
+        `ytsearch15:${query}`,
         '--dump-json',
         '--no-download',
         '--no-playlist',
